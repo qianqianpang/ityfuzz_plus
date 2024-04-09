@@ -88,12 +88,12 @@ impl AccessPattern {
 /// [`FuzzMutator`] is a mutator that mutates the input based on the ABI and
 /// access pattern
 pub struct FuzzMutator<VS, Loc, Addr, SC, CI>
-where
-    VS: Default + VMStateT,
-    SC: Scheduler<State = InfantStateState<Loc, Addr, VS, CI>>,
-    Addr: Serialize + DeserializeOwned + Debug + Clone,
-    Loc: Serialize + DeserializeOwned + Debug + Clone,
-    CI: Serialize + DeserializeOwned + Debug + Clone + ConciseSerde,
+    where
+        VS: Default + VMStateT,
+        SC: Scheduler<State = InfantStateState<Loc, Addr, VS, CI>>,
+        Addr: Serialize + DeserializeOwned + Debug + Clone,
+        Loc: Serialize + DeserializeOwned + Debug + Clone,
+        CI: Serialize + DeserializeOwned + Debug + Clone + ConciseSerde,
 {
     /// Scheduler for selecting the next VM state to use if we decide to mutate
     /// the VM state of the input
@@ -102,12 +102,12 @@ where
 }
 
 impl<VS, Loc, Addr, SC, CI> FuzzMutator<VS, Loc, Addr, SC, CI>
-where
-    VS: Default + VMStateT,
-    SC: Scheduler<State = InfantStateState<Loc, Addr, VS, CI>>,
-    Addr: Serialize + DeserializeOwned + Debug + Clone,
-    Loc: Serialize + DeserializeOwned + Debug + Clone,
-    CI: Serialize + DeserializeOwned + Debug + Clone + ConciseSerde,
+    where
+        VS: Default + VMStateT,
+        SC: Scheduler<State = InfantStateState<Loc, Addr, VS, CI>>,
+        Addr: Serialize + DeserializeOwned + Debug + Clone,
+        Loc: Serialize + DeserializeOwned + Debug + Clone,
+        CI: Serialize + DeserializeOwned + Debug + Clone + ConciseSerde,
 {
     /// Create a new [`FuzzMutator`] with the given scheduler
     pub fn new(infant_scheduler: SC) -> Self {
@@ -118,9 +118,9 @@ where
     }
 
     fn ensures_constraint<I, S>(input: &mut I, state: &mut S, new_vm_state: &VS, constraints: Vec<Constraint>) -> bool
-    where
-        I: VMInputT<VS, Loc, Addr, CI> + Input + EVMInputT,
-        S: State + HasRand + HasMaxSize + HasItyState<Loc, Addr, VS, CI> + HasCaller<Addr> + HasMetadata,
+        where
+            I: VMInputT<VS, Loc, Addr, CI> + Input + EVMInputT,
+            S: State + HasRand + HasMaxSize + HasItyState<Loc, Addr, VS, CI> + HasCaller<Addr> + HasMetadata,
     {
         // precheck
         for constraint in &constraints {
@@ -183,12 +183,12 @@ where
 }
 
 impl<VS, Loc, Addr, SC, CI> Named for FuzzMutator<VS, Loc, Addr, SC, CI>
-where
-    VS: Default + VMStateT,
-    SC: Scheduler<State = InfantStateState<Loc, Addr, VS, CI>>,
-    Addr: Serialize + DeserializeOwned + Debug + Clone,
-    Loc: Serialize + DeserializeOwned + Debug + Clone,
-    CI: Serialize + DeserializeOwned + Debug + Clone + ConciseSerde,
+    where
+        VS: Default + VMStateT,
+        SC: Scheduler<State = InfantStateState<Loc, Addr, VS, CI>>,
+        Addr: Serialize + DeserializeOwned + Debug + Clone,
+        Loc: Serialize + DeserializeOwned + Debug + Clone,
+        CI: Serialize + DeserializeOwned + Debug + Clone + ConciseSerde,
 {
     fn name(&self) -> &str {
         "FuzzMutator"
@@ -196,20 +196,31 @@ where
 }
 
 impl<VS, Loc, Addr, I, S, SC, CI> Mutator<I, S> for FuzzMutator<VS, Loc, Addr, SC, CI>
-where
-    I: VMInputT<VS, Loc, Addr, CI> + Input + EVMInputT,
-    S: State + HasRand + HasMaxSize + HasItyState<Loc, Addr, VS, CI> + HasCaller<Addr> + HasMetadata + HasPresets,
-    SC: Scheduler<State = InfantStateState<Loc, Addr, VS, CI>>,
-    VS: Default + VMStateT + EVMStateT,
-    Addr: PartialEq + Debug + Serialize + DeserializeOwned + Clone,
-    Loc: Serialize + DeserializeOwned + Debug + Clone,
-    CI: Serialize + DeserializeOwned + Debug + Clone + ConciseSerde,
+    where
+        I: VMInputT<VS, Loc, Addr, CI> + Input + EVMInputT,
+        S: State + HasRand + HasMaxSize + HasItyState<Loc, Addr, VS, CI> + HasCaller<Addr> + HasMetadata + HasPresets,
+        SC: Scheduler<State = InfantStateState<Loc, Addr, VS, CI>>,
+        VS: Default + VMStateT + EVMStateT,
+        Addr: PartialEq + Debug + Serialize + DeserializeOwned + Clone,
+        Loc: Serialize + DeserializeOwned + Debug + Clone,
+        CI: Serialize + DeserializeOwned + Debug + Clone + ConciseSerde,
 {
     /// Mutate the input
     #[allow(unused_assignments)]
     fn mutate(&mut self, state: &mut S, input: &mut I, _stage_idx: i32) -> Result<MutationResult, Error> {
         // if the VM state of the input is not initialized, swap it with a state
         // initialized
+        // 打印input的各个字段值
+        // println!("=================变异================================");
+        // println!("Caller: {:?}", input.get_caller());
+        // println!("Origin: {:?}", input.get_origin());
+        // println!("Contract: {:?}", input.get_contract());
+        // println!("State: {:?}", input.get_state());
+        // println!("State Index: {:?}", input.get_state_idx());
+        // println!("Staged State: {:?}", input.get_staged_state());
+        // println!("Is Step: {:?}", input.is_step());
+        // println!("get abi: {:?}", input.get_data_abi());
+        // println!("get_txn_value_temp: {:?}", input.get_txn_value_temp());
         if !input.get_staged_state().initialized {
             let concrete = state.get_infant_state(&mut self.infant_scheduler).unwrap();
             input.set_staged_state(concrete.1, concrete.0);

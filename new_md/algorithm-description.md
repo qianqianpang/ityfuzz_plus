@@ -1,8 +1,8 @@
 ### - 初始化变异器列表mutator_list：
-    - 现有的变异器是基于二进制编译的,共22种
+    - 现有的变异器是基于LIBAFL 二进制变异的,共22种
      mutator_list = [BitFlipMutator, ByteFlipMutator, ByteIncMutator, ByteDecMutator, ByteNegMutator, ByteRandMutator, ByteAddMutator, WordAddMutator, DwordAddMutator, QwordAddMutator, ByteInterestingMutator, WordInterestingMutator, DwordInterestingMutator, BytesSetMutator, BytesRandSetMutator, BytesSwapMutator, ConstantHintedMutator, VMStateHintedMutator, BytesExpandMutator, BytesInsertMutator, BytesRandInsertMutator, BytesCopyMutator]
-
-    - 包括三个层面的变异器
+     我想要的
+    - 包括三个层面的变异器(智能合约的交易结构，包括交易的发送者、接收者、交易值（转移的以太币数量）和输入数据)
       1 合约函数的参数
       2 tx
       3 环境参数
@@ -28,7 +28,7 @@
       Cov:{有符号double值}
       Is_datawaypoints_interesting：{0，1}
       Is_comparisonwaypoint_interesting：{0，1}
-      Is_instructions_interesting：{0，1}
+      Is_instructions_interesting：{0，1}//关键指令如状态变量的写入（SSTORE）、外部调用（CALL、CALLCODE、DELEGATECALL）和自毁（SELFDESTRUCT），就认为是有价值的
 
 
 
@@ -38,7 +38,7 @@
       [(1,1,1,1,1),(3,2,1,1,1),(5,3,2,2,1)]
 
     - 更新PTable
-      
+
 ### 更新PTable
     - y>VALUE>x，增加概率10%
     - 0<VALUE<x，增加概率5%

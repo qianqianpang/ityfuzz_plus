@@ -506,6 +506,7 @@ pub fn evm_fuzzer(
     match config.replay_file {
         None => {
             // load initial corpus
+            //处理一组测试用例，并使用模糊测试器（fuzzer）对每个测试用例进行评估
             for testcase in testcases {
                 let mut vm_state = initial_vm_state.clone();
                 for txn in testcase {
@@ -521,7 +522,7 @@ pub fn evm_fuzzer(
                 }
             }
             let res = fuzzer.fuzz_loop(&mut stages, &mut executor, state, &mut mgr);
-
+            // cov_middleware.borrow_mut().record_instruction_coverage();
             // it is not possible to reach here unless an exception is thrown
             let rv = res.err().unwrap().to_string();
             if rv == "No items in No entries in corpus" {
@@ -534,6 +535,7 @@ pub fn evm_fuzzer(
             exit(1);
         }
         Some(_) => {
+            //回放测试
             unsafe {
                 EVAL_COVERAGE = true;
             }

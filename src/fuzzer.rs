@@ -10,6 +10,8 @@ use std::{
     process::exit,
     time::Duration,
 };
+use std::sync::atomic::Ordering;
+use crate::global_info::{IS_OBJECTIVE, IS_CMP_INTERESTING, IS_DATAFLOW_INTERESTING, IS_INSTRUCTION_INTERESTING, print_global_vars};
 
 use itertools::Itertools;
 use libafl::{
@@ -69,19 +71,19 @@ pub static mut ORACLE_OUTPUT: Vec<serde_json::Value> = vec![];
 #[allow(clippy::type_complexity)]
 #[derive(Debug)]
 pub struct ItyFuzzer<VS, Loc, Addr, Out, CS, IS, F, IF, IFR, I, OF, S, OT, CI, SM>
-where
-    CS: Scheduler<State = S>,
-    IS: Scheduler<State = InfantStateState<Loc, Addr, VS, CI>> + HasReportCorpus<InfantStateState<Loc, Addr, VS, CI>>,
-    F: Feedback<S>,
-    IF: Feedback<S>,
-    IFR: Feedback<S>,
-    I: VMInputT<VS, Loc, Addr, CI>,
-    OF: Feedback<S>,
-    S: HasClientPerfMonitor + HasCorpus + HasRand + HasMetadata + UsesInput<Input = I>,
-    VS: Default + VMStateT,
-    Addr: Serialize + DeserializeOwned + Debug + Clone,
-    Loc: Serialize + DeserializeOwned + Debug + Clone,
-    CI: Serialize + DeserializeOwned + Debug + Clone + ConciseSerde,
+    where
+        CS: Scheduler<State = S>,
+        IS: Scheduler<State = InfantStateState<Loc, Addr, VS, CI>> + HasReportCorpus<InfantStateState<Loc, Addr, VS, CI>>,
+        F: Feedback<S>,
+        IF: Feedback<S>,
+        IFR: Feedback<S>,
+        I: VMInputT<VS, Loc, Addr, CI>,
+        OF: Feedback<S>,
+        S: HasClientPerfMonitor + HasCorpus + HasRand + HasMetadata + UsesInput<Input = I>,
+        VS: Default + VMStateT,
+        Addr: Serialize + DeserializeOwned + Debug + Clone,
+        Loc: Serialize + DeserializeOwned + Debug + Clone,
+        CI: Serialize + DeserializeOwned + Debug + Clone + ConciseSerde,
 {
     /// The scheduler for the input corpus
     scheduler: CS,
@@ -107,20 +109,20 @@ where
 }
 
 impl<VS, Loc, Addr, Out, CS, IS, F, IF, IFR, I, OF, S, OT, CI, SM>
-    ItyFuzzer<VS, Loc, Addr, Out, CS, IS, F, IF, IFR, I, OF, S, OT, CI, SM>
-where
-    CS: Scheduler<State = S>,
-    IS: Scheduler<State = InfantStateState<Loc, Addr, VS, CI>> + HasReportCorpus<InfantStateState<Loc, Addr, VS, CI>>,
-    F: Feedback<S>,
-    IF: Feedback<S>,
-    IFR: Feedback<S>,
-    I: VMInputT<VS, Loc, Addr, CI>,
-    OF: Feedback<S>,
-    S: HasClientPerfMonitor + HasCorpus + HasRand + HasMetadata + UsesInput<Input = I>,
-    VS: Default + VMStateT,
-    Addr: Serialize + DeserializeOwned + Debug + Clone,
-    Loc: Serialize + DeserializeOwned + Debug + Clone,
-    CI: Serialize + DeserializeOwned + Debug + Clone + ConciseSerde,
+ItyFuzzer<VS, Loc, Addr, Out, CS, IS, F, IF, IFR, I, OF, S, OT, CI, SM>
+    where
+        CS: Scheduler<State = S>,
+        IS: Scheduler<State = InfantStateState<Loc, Addr, VS, CI>> + HasReportCorpus<InfantStateState<Loc, Addr, VS, CI>>,
+        F: Feedback<S>,
+        IF: Feedback<S>,
+        IFR: Feedback<S>,
+        I: VMInputT<VS, Loc, Addr, CI>,
+        OF: Feedback<S>,
+        S: HasClientPerfMonitor + HasCorpus + HasRand + HasMetadata + UsesInput<Input = I>,
+        VS: Default + VMStateT,
+        Addr: Serialize + DeserializeOwned + Debug + Clone,
+        Loc: Serialize + DeserializeOwned + Debug + Clone,
+        CI: Serialize + DeserializeOwned + Debug + Clone + ConciseSerde,
 {
     /// Creates a new ItyFuzzer
     #[allow(clippy::too_many_arguments)]
@@ -187,38 +189,38 @@ where
 }
 
 impl<VS, Loc, Addr, Out, CS, IS, F, IF, IFR, I, OF, S, OT, CI, SM> UsesState
-    for ItyFuzzer<VS, Loc, Addr, Out, CS, IS, F, IF, IFR, I, OF, S, OT, CI, SM>
-where
-    CS: Scheduler<State = S>,
-    IS: Scheduler<State = InfantStateState<Loc, Addr, VS, CI>> + HasReportCorpus<InfantStateState<Loc, Addr, VS, CI>>,
-    F: Feedback<S>,
-    IF: Feedback<S>,
-    IFR: Feedback<S>,
-    I: VMInputT<VS, Loc, Addr, CI>,
-    OF: Feedback<S>,
-    S: HasClientPerfMonitor + HasCorpus + HasRand + HasMetadata + UsesInput<Input = I>,
-    VS: Default + VMStateT,
-    Addr: Serialize + DeserializeOwned + Debug + Clone,
-    Loc: Serialize + DeserializeOwned + Debug + Clone,
-    CI: Serialize + DeserializeOwned + Debug + Clone + ConciseSerde,
+for ItyFuzzer<VS, Loc, Addr, Out, CS, IS, F, IF, IFR, I, OF, S, OT, CI, SM>
+    where
+        CS: Scheduler<State = S>,
+        IS: Scheduler<State = InfantStateState<Loc, Addr, VS, CI>> + HasReportCorpus<InfantStateState<Loc, Addr, VS, CI>>,
+        F: Feedback<S>,
+        IF: Feedback<S>,
+        IFR: Feedback<S>,
+        I: VMInputT<VS, Loc, Addr, CI>,
+        OF: Feedback<S>,
+        S: HasClientPerfMonitor + HasCorpus + HasRand + HasMetadata + UsesInput<Input = I>,
+        VS: Default + VMStateT,
+        Addr: Serialize + DeserializeOwned + Debug + Clone,
+        Loc: Serialize + DeserializeOwned + Debug + Clone,
+        CI: Serialize + DeserializeOwned + Debug + Clone + ConciseSerde,
 {
     type State = S;
 }
 
 /// Implement fuzzer trait for ItyFuzzer
 impl<VS, Loc, Addr, Out, CS, IS, E, EM, F, IF, IFR, I, OF, S, ST, OT, CI, SM> Fuzzer<E, EM, ST>
-    for ItyFuzzer<VS, Loc, Addr, Out, CS, IS, F, IF, IFR, I, OF, S, OT, CI, SM>
-where
-    CS: Scheduler<State = S>,
-    IS: Scheduler<State = InfantStateState<Loc, Addr, VS, CI>> + HasReportCorpus<InfantStateState<Loc, Addr, VS, CI>>,
-    E: Executor<EM, Self, State = S>,
-    EM: EventManager<E, Self, State = S>,
-    F: Feedback<S>,
-    IF: Feedback<S>,
-    IFR: Feedback<S>,
-    I: VMInputT<VS, Loc, Addr, CI>,
-    OF: Feedback<S>,
-    S: HasClientPerfMonitor
+for ItyFuzzer<VS, Loc, Addr, Out, CS, IS, F, IF, IFR, I, OF, S, OT, CI, SM>
+    where
+        CS: Scheduler<State = S>,
+        IS: Scheduler<State = InfantStateState<Loc, Addr, VS, CI>> + HasReportCorpus<InfantStateState<Loc, Addr, VS, CI>>,
+        E: Executor<EM, Self, State = S>,
+        EM: EventManager<E, Self, State = S>,
+        F: Feedback<S>,
+        IF: Feedback<S>,
+        IFR: Feedback<S>,
+        I: VMInputT<VS, Loc, Addr, CI>,
+        OF: Feedback<S>,
+        S: HasClientPerfMonitor
         + HasExecutions
         + HasMetadata
         + HasCurrentInputIdx
@@ -226,11 +228,11 @@ where
         + HasCorpus
         + HasLastReportTime
         + UsesInput<Input = I>,
-    ST: StagesTuple<E, EM, S, Self>,
-    VS: Default + VMStateT,
-    Addr: Serialize + DeserializeOwned + Debug + Clone,
-    Loc: Serialize + DeserializeOwned + Debug + Clone,
-    CI: Serialize + DeserializeOwned + Debug + Clone + ConciseSerde,
+        ST: StagesTuple<E, EM, S, Self>,
+        VS: Default + VMStateT,
+        Addr: Serialize + DeserializeOwned + Debug + Clone,
+        Loc: Serialize + DeserializeOwned + Debug + Clone,
+        CI: Serialize + DeserializeOwned + Debug + Clone + ConciseSerde,
 {
     /// Fuzz one input
     fn fuzz_one(
@@ -250,6 +252,8 @@ where
             .perform_all(self, executor, state, manager, idx)
             .expect("perform_all failed");
         manager.process(self, state, executor)?;
+
+
         Ok(idx)
     }
 
@@ -261,6 +265,7 @@ where
         state: &mut EM::State,
         manager: &mut EM,
     ) -> Result<CorpusId, Error> {
+        println!("=======================开始fuzzloop==========================");
         // now report stats to manager every 1 sec
         let reporting_interval = Duration::from_millis(
             env::var("REPORTING_INTERVAL")
@@ -350,19 +355,19 @@ macro_rules! dump_txn {
 
 // implement evaluator trait for ItyFuzzer
 impl<VS, Loc, Addr, Out, E, EM, I, S, CS, IS, F, IF, IFR, OF, OT, CI, SM> Evaluator<E, EM>
-    for ItyFuzzer<VS, Loc, Addr, Out, CS, IS, F, IF, IFR, I, OF, S, OT, CI, SM>
-where
-    CS: Scheduler<State = S> + RemovableScheduler,
-    IS: Scheduler<State = InfantStateState<Loc, Addr, VS, CI>> + HasReportCorpus<InfantStateState<Loc, Addr, VS, CI>>,
-    F: Feedback<S>,
-    IF: Feedback<S>,
-    IFR: Feedback<S>,
-    E: Executor<EM, Self, State = S> + HasObservers<Observers = OT>,
-    OT: ObserversTuple<S> + serde::Serialize + serde::de::DeserializeOwned,
-    EM: EventManager<E, Self, State = S>,
-    I: VMInputT<VS, Loc, Addr, CI>,
-    OF: Feedback<S>,
-    S: HasClientPerfMonitor
+for ItyFuzzer<VS, Loc, Addr, Out, CS, IS, F, IF, IFR, I, OF, S, OT, CI, SM>
+    where
+        CS: Scheduler<State = S> + RemovableScheduler,
+        IS: Scheduler<State = InfantStateState<Loc, Addr, VS, CI>> + HasReportCorpus<InfantStateState<Loc, Addr, VS, CI>>,
+        F: Feedback<S>,
+        IF: Feedback<S>,
+        IFR: Feedback<S>,
+        E: Executor<EM, Self, State = S> + HasObservers<Observers = OT>,
+        OT: ObserversTuple<S> + serde::Serialize + serde::de::DeserializeOwned,
+        EM: EventManager<E, Self, State = S>,
+        I: VMInputT<VS, Loc, Addr, CI>,
+        OF: Feedback<S>,
+        S: HasClientPerfMonitor
         + HasCorpus
         + HasSolutions
         + HasInfantStateState<Loc, Addr, VS, CI>
@@ -373,12 +378,12 @@ where
         + HasRand
         + HasLastReportTime
         + UsesInput<Input = I>,
-    VS: Default + VMStateT,
-    Addr: Serialize + DeserializeOwned + Debug + Clone,
-    Loc: Serialize + DeserializeOwned + Debug + Clone,
-    Out: Default + Into<Vec<u8>> + Clone,
-    CI: Serialize + DeserializeOwned + Debug + Clone + ConciseSerde + SolutionTx,
-    SM: SequentialMinimizer<S, E, Loc, Addr, CI, OF>,
+        VS: Default + VMStateT,
+        Addr: Serialize + DeserializeOwned + Debug + Clone,
+        Loc: Serialize + DeserializeOwned + Debug + Clone,
+        Out: Default + Into<Vec<u8>> + Clone,
+        CI: Serialize + DeserializeOwned + Debug + Clone + ConciseSerde + SolutionTx,
+        SM: SequentialMinimizer<S, E, Loc, Addr, CI, OF>,
 {
     /// Evaluate input (execution + feedback + objectives)
     fn evaluate_input_events(
@@ -413,10 +418,21 @@ where
         let is_infant_interesting = self
             .infant_feedback
             .is_interesting(state, manager, &input, observers, &exitkind)?;
+        IS_CMP_INTERESTING.store(is_infant_interesting, Ordering::SeqCst);
+        // println!("有趣1——is_cmp_interesting: {:?}", is_infant_interesting);
 
         let is_solution = self
             .objective
             .is_interesting(state, manager, &input, observers, &exitkind)?;
+        // println!("有趣3——is_objective_bug: {:?}", is_solution);
+        IS_OBJECTIVE.store(is_solution, Ordering::SeqCst);
+
+
+        let is_infant_solution = self
+            .infant_result_feedback
+            .is_interesting(state, manager, &input, observers, &exitkind)?;
+        // println!("有趣2——is_dataflow_feedback: {:?}", is_infant_solution);
+        IS_DATAFLOW_INTERESTING.store(is_infant_solution, Ordering::SeqCst);
 
         // add the trace of the new state
         #[cfg(any(feature = "print_infant_corpus", feature = "print_txn_corpus"))]
@@ -458,6 +474,7 @@ where
                 .is_interesting(state, manager, &input, observers, &exitkind)?;
 
             if is_corpus {
+                // println!("有趣4——is_corpus: {:?}", is_corpus);
                 res = ExecuteInputResult::Corpus;
 
                 // Debugging prints
@@ -468,7 +485,7 @@ where
                 }
             }
         }
-
+        print_global_vars();
         let mut corpus_idx = CorpusId::from(0usize);
         if res == ExecuteInputResult::Corpus || res == ExecuteInputResult::Solution {
             // Add the input to the main corpus
@@ -555,12 +572,12 @@ where
                 println!("\n\n\n😊😊 Found vulnerabilities! \n\n");
                 let cur_report =
                     format!(
-                    "================ Description ================\n{}\n================ Trace ================\n{}\n",
-                    unsafe { ORACLE_OUTPUT.iter().map(|v| {
-                        format!("[{}]: {}", v["bug_type"].as_str().unwrap(), v["bug_info"].as_str().unwrap())
-                     }).join("\n") },
-                    txn_text
-                );
+                        "================ Description ================\n{}\n================ Trace ================\n{}\n",
+                        unsafe { ORACLE_OUTPUT.iter().map(|v| {
+                            format!("[{}]: {}", v["bug_type"].as_str().unwrap(), v["bug_info"].as_str().unwrap())
+                        }).join("\n") },
+                        txn_text
+                    );
                 println!("{}", cur_report);
 
                 solution::generate_test(cur_report.clone(), minimized);
@@ -578,7 +595,7 @@ where
                         .join("\n")
                         .as_bytes()
                 })
-                .expect("Unable to write data");
+                    .expect("Unable to write data");
                 f.write_all(b"\n").expect("Unable to write data");
 
                 #[cfg(feature = "print_txn_corpus")]
@@ -618,6 +635,7 @@ where
             ORACLE_OUTPUT.clear();
         }
         final_res
+
     }
 
     /// never called!
