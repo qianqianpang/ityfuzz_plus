@@ -36,8 +36,10 @@ use crate::{
 /// source
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct AccessPattern {
-    pub caller: bool,             // or origin
-    pub balance: Vec<EVMAddress>, // balance queried for accounts
+    pub caller: bool,
+    // or origin
+    pub balance: Vec<EVMAddress>,
+    // balance queried for accounts
     pub call_value: bool,
     pub gas_price: bool,
     pub number: bool,
@@ -47,6 +49,8 @@ pub struct AccessPattern {
     pub gas_limit: bool,
     pub chain_id: bool,
     pub basefee: bool,
+    pub difficulty: bool,
+    // pub limit_contract_code_size: bool,
 }
 
 impl AccessPattern {
@@ -64,6 +68,8 @@ impl AccessPattern {
             gas_limit: false,
             chain_id: false,
             basefee: false,
+            difficulty: false,
+            // limit_contract_code_size: false,
         }
     }
 
@@ -80,6 +86,8 @@ impl AccessPattern {
             0x45 => self.gas_limit = true,
             0x46 => self.chain_id = true,
             0x48 => self.basefee = true,
+            0x50 => self.difficulty = true,
+            // 0x52 => self.limit_contract_code_size = true,
             _ => {}
         }
     }
@@ -90,7 +98,7 @@ impl AccessPattern {
 pub struct FuzzMutator<VS, Loc, Addr, SC, CI>
     where
         VS: Default + VMStateT,
-        SC: Scheduler<State = InfantStateState<Loc, Addr, VS, CI>>,
+        SC: Scheduler<State=InfantStateState<Loc, Addr, VS, CI>>,
         Addr: Serialize + DeserializeOwned + Debug + Clone,
         Loc: Serialize + DeserializeOwned + Debug + Clone,
         CI: Serialize + DeserializeOwned + Debug + Clone + ConciseSerde,
@@ -104,7 +112,7 @@ pub struct FuzzMutator<VS, Loc, Addr, SC, CI>
 impl<VS, Loc, Addr, SC, CI> FuzzMutator<VS, Loc, Addr, SC, CI>
     where
         VS: Default + VMStateT,
-        SC: Scheduler<State = InfantStateState<Loc, Addr, VS, CI>>,
+        SC: Scheduler<State=InfantStateState<Loc, Addr, VS, CI>>,
         Addr: Serialize + DeserializeOwned + Debug + Clone,
         Loc: Serialize + DeserializeOwned + Debug + Clone,
         CI: Serialize + DeserializeOwned + Debug + Clone + ConciseSerde,
@@ -185,7 +193,7 @@ impl<VS, Loc, Addr, SC, CI> FuzzMutator<VS, Loc, Addr, SC, CI>
 impl<VS, Loc, Addr, SC, CI> Named for FuzzMutator<VS, Loc, Addr, SC, CI>
     where
         VS: Default + VMStateT,
-        SC: Scheduler<State = InfantStateState<Loc, Addr, VS, CI>>,
+        SC: Scheduler<State=InfantStateState<Loc, Addr, VS, CI>>,
         Addr: Serialize + DeserializeOwned + Debug + Clone,
         Loc: Serialize + DeserializeOwned + Debug + Clone,
         CI: Serialize + DeserializeOwned + Debug + Clone + ConciseSerde,
@@ -199,7 +207,7 @@ impl<VS, Loc, Addr, I, S, SC, CI> Mutator<I, S> for FuzzMutator<VS, Loc, Addr, S
     where
         I: VMInputT<VS, Loc, Addr, CI> + Input + EVMInputT,
         S: State + HasRand + HasMaxSize + HasItyState<Loc, Addr, VS, CI> + HasCaller<Addr> + HasMetadata + HasPresets,
-        SC: Scheduler<State = InfantStateState<Loc, Addr, VS, CI>>,
+        SC: Scheduler<State=InfantStateState<Loc, Addr, VS, CI>>,
         VS: Default + VMStateT + EVMStateT,
         Addr: PartialEq + Debug + Serialize + DeserializeOwned + Clone,
         Loc: Serialize + DeserializeOwned + Debug + Clone,
@@ -209,18 +217,6 @@ impl<VS, Loc, Addr, I, S, SC, CI> Mutator<I, S> for FuzzMutator<VS, Loc, Addr, S
     #[allow(unused_assignments)]
     fn mutate(&mut self, state: &mut S, input: &mut I, _stage_idx: i32) -> Result<MutationResult, Error> {
         // if the VM state of the input is not initialized, swap it with a state
-        // initialized
-        // 打印input的各个字段值
-        // println!("=================变异================================");
-        // println!("Caller: {:?}", input.get_caller());
-        // println!("Origin: {:?}", input.get_origin());
-        // println!("Contract: {:?}", input.get_contract());
-        // println!("State: {:?}", input.get_state());
-        // println!("State Index: {:?}", input.get_state_idx());
-        // println!("Staged State: {:?}", input.get_staged_state());
-        // println!("Is Step: {:?}", input.is_step());
-        // println!("get abi: {:?}", input.get_data_abi());
-        // println!("get_txn_value_temp: {:?}", input.get_txn_value_temp());
         if !input.get_staged_state().initialized {
             let concrete = state.get_infant_state(&mut self.infant_scheduler).unwrap();
             input.set_staged_state(concrete.1, concrete.0);

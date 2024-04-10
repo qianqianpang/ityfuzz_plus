@@ -485,7 +485,7 @@ for ItyFuzzer<VS, Loc, Addr, Out, CS, IS, F, IF, IFR, I, OF, S, OT, CI, SM>
                 }
             }
         }
-        print_global_vars();
+
         let mut corpus_idx = CorpusId::from(0usize);
         if res == ExecuteInputResult::Corpus || res == ExecuteInputResult::Solution {
             // Add the input to the main corpus
@@ -550,6 +550,7 @@ for ItyFuzzer<VS, Loc, Addr, Out, CS, IS, F, IF, IFR, I, OF, S, OT, CI, SM>
             }
             // find the solution
             ExecuteInputResult::Solution => {
+                print_global_vars();
                 state
                     .metadata_map_mut()
                     .get_mut::<BugMetadata>()

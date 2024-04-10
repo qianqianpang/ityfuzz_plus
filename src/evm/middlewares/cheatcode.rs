@@ -178,8 +178,8 @@ macro_rules! cheat_call_error {
 }
 
 impl<SC> Middleware<SC> for Cheatcode<SC>
-where
-    SC: Scheduler<State = EVMFuzzState> + Clone + Debug,
+    where
+        SC: Scheduler<State=EVMFuzzState> + Clone + Debug,
 {
     unsafe fn on_step(&mut self, interp: &mut Interpreter, host: &mut FuzzHost<SC>, _state: &mut EVMFuzzState) {
         let op = interp.current_opcode();
@@ -198,8 +198,8 @@ where
 }
 
 impl<SC> Cheatcode<SC>
-where
-    SC: Scheduler<State = EVMFuzzState> + Clone,
+    where
+        SC: Scheduler<State=EVMFuzzState> + Clone,
 {
     pub fn new() -> Self {
         Self {
@@ -235,6 +235,8 @@ where
             VmCalls::chainId(args) => self.chain_id(&mut host.env, args),
             VmCalls::txGasPrice(args) => self.tx_gas_price(&mut host.env, args),
             VmCalls::coinbase(args) => self.coinbase(&mut host.env, args),
+            VmCalls::difficulty(args) => self.difficulty(&mut host.env, args),
+            // VmCalls::limit_contract_code_size(args) => self.limit_contract_code_size(&mut host.env, args),
             VmCalls::load(args) => self.load(&host.evmstate, args),
             VmCalls::store(args) => self.store(&mut host.evmstate, args),
             VmCalls::etch(args) => self.etch(host, args),
@@ -389,8 +391,8 @@ where
 
 /// Cheat VmCalls
 impl<SC> Cheatcode<SC>
-where
-    SC: Scheduler<State = EVMFuzzState> + Clone,
+    where
+        SC: Scheduler<State=EVMFuzzState> + Clone,
 {
     /// Sets `block.timestamp`.
     #[inline]
@@ -423,7 +425,12 @@ where
         }
         None
     }
-
+    // fn limit_contract_code_size(&self, env: &mut Env, args: Vm::limit_contract_code_size) -> Option<Vec<u8>> {
+    //     let new_size_limit = args.newSizeLimit;
+    //     env.cfg.limit_contract_code_size = new_size_limit;
+    //
+    //     None
+    // }
     /// Sets `block.prevrandao`.
     /// Not available on EVM versions before Paris. Use `difficulty` instead.
     #[inline]
@@ -1057,7 +1064,7 @@ fn handle_expect_emit(
     } else {
         expected_emits.pop_front()
     }
-    .expect("we should have an emit to fill or check");
+        .expect("we should have an emit to fill or check");
 
     let Some(expected) = &event_to_fill_or_check.log else {
         // Fill the event.

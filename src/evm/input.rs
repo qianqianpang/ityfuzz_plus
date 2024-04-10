@@ -1,5 +1,5 @@
 use std::{cell::RefCell, collections::HashMap, fmt::Debug, ops::Deref, rc::Rc};
-
+use revm_primitives::U256;
 use bytes::Bytes;
 use colored::{ColoredString, Colorize};
 use libafl::{
@@ -8,9 +8,9 @@ use libafl::{
     prelude::{HasBytesVec, HasMaxSize, HasMetadata, HasRand, State},
 };
 use libafl_bolts::{prelude::Rand, HasLen};
+use rand::Rng;
 use revm_primitives::Env;
 use serde::{Deserialize, Deserializer, Serialize};
-
 use super::{
     onchain::flashloan::CAN_LIQUIDATE,
     utils::{colored_address, colored_sender, prettify_value},
@@ -31,7 +31,19 @@ use crate::{
     state::{HasCaller, HasItyState},
     state_input::StagedVMState,
 };
+use std::collections::HashSet;
+use std::sync::Mutex;
+use lazy_static::lazy_static;
+use libafl_bolts::bolts_prelude::RomuDuoJrRand;
 
+// 创建一个全局的池来存储所有的变异值
+lazy_static! {
+    static ref BASEFEE_POOL: Mutex<HashSet<EVMU256>> = Mutex::new(HashSet::new());
+    static ref TIMESTAMP_POOL: Mutex<HashSet<EVMU256>> = Mutex::new(HashSet::new());
+    static ref COINBASE_POOL: Mutex<HashSet<EVMAddress>> = Mutex::new(HashSet::new());
+    static ref GAS_LIMIT_POOL: Mutex<HashSet<EVMU256>> = Mutex::new(HashSet::new());
+    static ref NUMBER_POOL: Mutex<HashSet<EVMU256>> = Mutex::new(HashSet::new());
+}
 /// EVM Input Types
 #[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug, Default)]
 pub enum EVMInputTy {
@@ -252,9 +264,9 @@ impl ConciseEVMInput {
         input: &I,
         execution_result: &ExecutionResult<EVMAddress, EVMAddress, EVMState, Out, ConciseEVMInput>,
     ) -> Self
-    where
-        I: VMInputT<EVMState, EVMAddress, EVMAddress, ConciseEVMInput> + EVMInputT,
-        Out: Default + Into<Vec<u8>> + Clone,
+        where
+            I: VMInputT<EVMState, EVMAddress, EVMAddress, ConciseEVMInput> + EVMInputT,
+            Out: Default + Into<Vec<u8>> + Clone,
     {
         let return_data = match execution_result.output.clone().into() {
             v if v.is_empty() => None,
@@ -291,8 +303,8 @@ impl ConciseEVMInput {
     }
 
     pub fn from_input_with_call_leak<I>(input: &I, call_leak: u32) -> Self
-    where
-        I: VMInputT<EVMState, EVMAddress, EVMAddress, ConciseEVMInput> + EVMInputT,
+        where
+            I: VMInputT<EVMState, EVMAddress, EVMAddress, ConciseEVMInput> + EVMInputT,
     {
         Self {
             input_type: input.get_input_type(),
@@ -434,7 +446,7 @@ impl ConciseEVMInput {
                     self.fn_selector().purple(),
                     self.fn_args()
                 )
-                .as_str(),
+                    .as_str(),
             );
         }
 
@@ -694,12 +706,23 @@ impl EVMInputT for EVMInput {
 }
 
 ///
-macro_rules! impl_env_mutator_u256 {
-    ($item: ident, $loc: ident, $increasing_only: expr) => {
+macro_rules! impl_env_mutator_u256_pool {
+    ($item: ident, $loc: ident, $increasing_only: expr, $pool: ident) => {
         pub fn $item<S>(input: &mut EVMInput, state_: &mut S) -> MutationResult
         where
             S: State + HasCaller<EVMAddress> + HasRand + HasMetadata,
         {
+            let mut pool = $pool.lock().unwrap();
+
+            // 有概率直接用pool中的值替换
+            if  !pool.is_empty() && state_.rand_mut().below(100) < 50 {
+                println!("新方法——使用了观察到的pool值变异");
+                let idx = state_.rand_mut().below(pool.len() as u64);
+                let val = pool.iter().nth(idx as usize).unwrap().clone();
+                input.get_vm_env_mut().$loc.$item = val;
+                return MutationResult::Mutated;
+            }
+
             let vm_slots = if let Some(s) = input.get_state().get(&input.get_contract()) {
                 Some(s.clone())
             } else {
@@ -719,24 +742,41 @@ macro_rules! impl_env_mutator_u256 {
                 }
             }
 
+            // 将新的值添加到池中
+            pool.insert(result_val.clone());
+
             input.get_vm_env_mut().$loc.$item = result_val;
             res
         }
     };
 }
 
-macro_rules! impl_env_mutator_h160 {
-    ($item: ident, $loc: ident) => {
+macro_rules! impl_env_mutator_h160_pool {
+    ($item: ident, $loc: ident, $pool: ident) => {
         pub fn $item<S>(input: &mut EVMInput, state_: &mut S) -> MutationResult
         where
             S: State + HasCaller<EVMAddress> + HasRand,
         {
+            let mut pool = $pool.lock().unwrap();
+
+            // 有概率直接用pool中的值替换
+            if !pool.is_empty() && state_.rand_mut().below(100) < 50 {
+                println!("新方法——使用了观察到的pool值变异");
+                let idx = state_.rand_mut().below(pool.len() as u64);
+                let val = pool.iter().nth(idx as usize).unwrap().clone();
+                input.get_vm_env_mut().$loc.$item = val;
+                return MutationResult::Mutated;
+            }
+
             let addr = state_.get_rand_caller();
             if addr == input.get_caller() {
                 return MutationResult::Skipped;
             } else {
+                // 将新的值添加到池中
+                pool.insert(addr.clone());
+
                 input.get_vm_env_mut().$loc.$item = addr;
-                MutationResult::Mutated
+                return MutationResult::Mutated;
             }
         }
     };
@@ -751,8 +791,8 @@ struct MutatorInput<'a> {
 
 impl<'a, 'de> Deserialize<'de> for MutatorInput<'a> {
     fn deserialize<D>(_deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
+        where
+            D: Deserializer<'de>,
     {
         unreachable!()
     }
@@ -793,43 +833,85 @@ impl<'a> HasBytesVec for MutatorInput<'a> {
 }
 
 impl EVMInput {
-    impl_env_mutator_u256!(basefee, block, false);
-    impl_env_mutator_u256!(timestamp, block, true);
-    impl_env_mutator_h160!(coinbase, block);
-    impl_env_mutator_u256!(gas_limit, block, false);
-    impl_env_mutator_u256!(number, block, true);
+    impl_env_mutator_u256_pool!(basefee, block, false, BASEFEE_POOL);
+    impl_env_mutator_u256_pool!(timestamp, block, true, TIMESTAMP_POOL);
+    impl_env_mutator_h160_pool!(coinbase, block, COINBASE_POOL);
+    impl_env_mutator_u256_pool!(gas_limit, block, false, GAS_LIMIT_POOL);
+    impl_env_mutator_u256_pool!(number, block, true, NUMBER_POOL);
     // impl_env_mutator_u256!(chain_id, cfg, false);
 
-    pub fn prevrandao<S>(_input: &mut EVMInput, _state_: &mut S) -> MutationResult
-    where
-        S: State + HasCaller<EVMAddress> + HasRand + HasMetadata,
+    pub fn prevrandao<S>(input: &mut EVMInput, state_: &mut S) -> MutationResult
+        where
+            S: State + HasCaller<EVMAddress> + HasRand + HasMetadata,
     {
         // not supported yet
-        // unreachable!();
-        MutationResult::Skipped
+        // unreachable!();这样变异是否合适
+        println!("新方法——使用了prevrandao变异");
+        let new_difficulty = state_.rand_mut().below(1000); // Adjust the range as needed
+        input.get_vm_env_mut().block.difficulty = EVMU256::from(new_difficulty);
+
+        MutationResult::Mutated
     }
 
-    pub fn gas_price<S>(_input: &mut EVMInput, _state_: &mut S) -> MutationResult
-    where
-        S: State + HasCaller<EVMAddress> + HasRand + HasMetadata,
+    pub fn gas_price<S>(_input: &mut EVMInput, state_: &mut S) -> MutationResult
+        where
+            S: State + HasCaller<EVMAddress> + HasRand + HasMetadata,
     {
         // not supported yet
         // unreachable!();
-        MutationResult::Skipped
+        println!("新方法——使用了gas price变异");
+        // 原来的值*0-2之间的数
+        let current_gas_price = _input.get_vm_env().tx.gas_price;
+        let rand_factor_u64 = state_.rand_mut().below(20);
+        let rand_factor_u256 = U256::from(rand_factor_u64);
+        let temp = U256::from(100);
+        let new_gas_price = ((current_gas_price) * (rand_factor_u256)) / temp;
+        _input.get_vm_env_mut().tx.gas_price = new_gas_price.into();
+
+        MutationResult::Mutated
     }
 
-    pub fn balance<S>(_input: &mut EVMInput, _state_: &mut S) -> MutationResult
-    where
-        S: State + HasCaller<EVMAddress> + HasRand + HasMetadata,
+    pub fn balance<S>(input: &mut EVMInput, state_: &mut S) -> MutationResult
+        where
+            S: State + HasCaller<EVMAddress> + HasRand + HasMetadata,
     {
+
         // not supported yet
         // unreachable!();
-        MutationResult::Skipped
+        println!("新方法——使用了balance变异");
+        let current_balance = input.get_vm_env().tx.value;
+        let rand_factor_u64 = state_.rand_mut().below(20);
+        let rand_factor_u256 = U256::from(rand_factor_u64);
+        let temp = U256::from(100);
+        let new_balance = ((current_balance) * (rand_factor_u256)) / temp;
+        input.get_vm_env_mut().tx.value = new_balance.into();
+
+        MutationResult::Mutated
     }
+
+    pub fn difficulty<S>(input: &mut EVMInput, state_: &mut S) -> MutationResult
+        where
+            S: State + HasCaller<EVMAddress> + HasRand + HasMetadata,
+    {
+        println!("新方法——使用了diffculty变异");
+        let new_difficulty = state_.rand_mut().below(1000);
+        input.get_vm_env_mut().block.difficulty = EVMU256::from(new_difficulty);
+        MutationResult::Mutated
+    }
+
+    // pub fn limit_contract_code_size<S>(input: &mut EVMInput, state_: &mut S) -> MutationResult
+    //     where
+    //         S: State + HasCaller<EVMAddress> + HasRand + HasMetadata,
+    // {
+    //     println!("新方法——使用了limit_contract_code_size变异");
+    //     let new_size_limit = state_.rand_mut().below(10000);
+    //     input.get_vm_env_mut().cfg.limit_contract_code_size = Option::from(new_size_limit as usize);
+    //     MutationResult::Mutated
+    // }
 
     pub fn caller<S>(input: &mut EVMInput, state_: &mut S) -> MutationResult
-    where
-        S: State + HasCaller<EVMAddress> + HasRand + HasMetadata,
+        where
+            S: State + HasCaller<EVMAddress> + HasRand + HasMetadata,
     {
         let caller = state_.get_rand_caller();
         if caller == input.get_caller() {
@@ -842,8 +924,8 @@ impl EVMInput {
     }
 
     pub fn call_value<S>(input: &mut EVMInput, state_: &mut S) -> MutationResult
-    where
-        S: State + HasCaller<EVMAddress> + HasRand + HasMetadata,
+        where
+            S: State + HasCaller<EVMAddress> + HasRand + HasMetadata,
     {
         let vm_slots = input.get_state().get(&input.get_contract()).cloned();
         let input_by: [u8; 32] = input.get_txn_value().unwrap_or_default().to_be_bytes();
@@ -862,8 +944,8 @@ impl EVMInput {
     }
 
     pub fn mutate_env_with_access_pattern<S>(&mut self, state: &mut S) -> MutationResult
-    where
-        S: State + HasCaller<EVMAddress> + HasRand + HasMetadata,
+        where
+            S: State + HasCaller<EVMAddress> + HasRand + HasMetadata,
     {
         let ap = self.get_access_pattern().deref().borrow().clone();
         let mut mutators = vec![];
@@ -891,8 +973,11 @@ impl EVMInput {
         add_mutator!(coinbase);
         add_mutator!(gas_limit);
         add_mutator!(number);
+        add_mutator!(call_value);
         // add_mutator!(chain_id);
         add_mutator!(prevrandao);
+        add_mutator!(difficulty);
+        // add_mutator!(limit_contract_code_size);
 
         if mutators.is_empty() {
             return MutationResult::Skipped;
@@ -939,7 +1024,7 @@ impl ConciseSerde for ConciseEVMInput {
                     tree_level + 1,
                     colored_sender(&self.sender())
                 )
-                .as_str(),
+                    .as_str(),
             );
             call.push('\n');
             call.push_str(fallback.as_str());
@@ -980,8 +1065,8 @@ impl ConciseSerde for ConciseEVMInput {
 
 impl VMInputT<EVMState, EVMAddress, EVMAddress, ConciseEVMInput> for EVMInput {
     fn mutate<S>(&mut self, state: &mut S) -> MutationResult
-    where
-        S: State
+        where
+            S: State
             + HasRand
             + HasMaxSize
             + HasItyState<EVMAddress, EVMAddress, EVMState, ConciseEVMInput>

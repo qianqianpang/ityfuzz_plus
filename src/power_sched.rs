@@ -92,7 +92,7 @@ impl<E, F, EM, I, M, Z> Stage<E, EM, Z> for PowerMutationalStageWithId<E, F, EM,
     ) -> Result<(), Error> {
         println!("===============================================================执行mutate stage perform======================================================================");
         let ret = self.perform_mutational(fuzzer, executor, state, manager, corpus_idx);
-        // print_global_vars();
+        print_global_vars();
         ret
     }
 }
