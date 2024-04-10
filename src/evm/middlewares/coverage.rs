@@ -7,6 +7,7 @@ use std::{
     path::Path,
     time::{SystemTime, UNIX_EPOCH},
 };
+use std::io::Bytes;
 
 use itertools::Itertools;
 use libafl::{schedulers::Scheduler, state::HasMetadata};
@@ -15,6 +16,7 @@ use revm_interpreter::{
     Interpreter,
 };
 use revm_primitives::Bytecode;
+use revm_primitives::hex_literal::hex;
 use serde::Serialize;
 use serde_json;
 use tracing::info;
@@ -184,6 +186,8 @@ impl CoverageReport {
     pub fn summarize(&self) {
         info!("============= Coverage Summary =============");
         for (addr, cov) in &self.coverage {
+            println!("instruction_coverage: {}", cov.instruction_coverage);
+            println!("total_instructions: {}", cov.total_instructions);
             info!(
                 "{}: {:.2}% Instruction Covered, {:.2}% Branch Covered",
                 addr,
@@ -239,7 +243,14 @@ impl Coverage {
         // Figure out covered and not covered instructions
         let default_skipper = HashSet::new();
 
+        // let bytecode = Bytecode::new_raw(Bytes::from(hex!("608060405234801561001057600080fd5b5060d38061001f6000396000f3fe6080604052600080fdfea2646970667358221220f6a627ed1f2986c5c353b4d9767e6c6f3e28e291a7a6db7db5c4aebc27c3e3e564736f6c634300060c0033").to_vec()));
+
         for (addr, all_pcs) in &self.total_instr_set {
+            println!("Address: {:?}", addr);
+            for pc in all_pcs {
+                println!("Instruction at PC {}: {:?}", pc, self.pc_info.get(&(*addr, *pc)));
+            }
+
             let name = self.address_to_name.get(addr).unwrap_or(&format!("{:?}", addr)).clone();
             match self.pc_coverage.get_mut(addr) {
                 None => {}
@@ -290,8 +301,8 @@ impl Coverage {
 }
 
 impl<SC> Middleware<SC> for Coverage
-where
-    SC: Scheduler<State = EVMFuzzState> + Clone,
+    where
+        SC: Scheduler<State = EVMFuzzState> + Clone,
 {
     unsafe fn on_step(&mut self, interp: &mut Interpreter, _host: &mut FuzzHost<SC>, _state: &mut EVMFuzzState) {
         if IN_DEPLOY || !EVAL_COVERAGE {

@@ -2,7 +2,7 @@
 //! stage.
 
 use core::{fmt::Debug, marker::PhantomData};
-
+use crate::global_info::print_global_vars;
 use libafl::{
     corpus::{Corpus, CorpusId},
     executors::{Executor, HasObservers},
@@ -15,8 +15,8 @@ use libafl::{
 };
 
 pub trait TestcaseScoreWithId<S>
-where
-    S: HasMetadata + HasCorpus,
+    where
+        S: HasMetadata + HasCorpus,
 {
     /// Computes the favor factor of a [`Testcase`]. Lower is better.
     fn compute(state: &S, entry: &mut Testcase<S::Input>, id: CorpusId) -> Result<f64, Error>;
@@ -31,21 +31,21 @@ pub struct PowerMutationalStageWithId<E, F, EM, I, M, Z> {
 }
 
 impl<E, F, EM, I, M, Z> UsesState for PowerMutationalStageWithId<E, F, EM, I, M, Z>
-where
-    E: UsesState,
+    where
+        E: UsesState,
 {
     type State = E::State;
 }
 
 impl<E, F, EM, I, M, Z> MutationalStage<E, EM, I, M, Z> for PowerMutationalStageWithId<E, F, EM, I, M, Z>
-where
-    E: Executor<EM, Z> + HasObservers,
-    EM: UsesState<State = E::State>,
-    F: TestcaseScoreWithId<E::State>,
-    M: Mutator<I, E::State>,
-    E::State: HasClientPerfMonitor + HasCorpus + HasMetadata + HasRand,
-    Z: Evaluator<E, EM, State = E::State>,
-    I: MutatedTransform<E::Input, E::State> + Clone,
+    where
+        E: Executor<EM, Z> + HasObservers,
+        EM: UsesState<State = E::State>,
+        F: TestcaseScoreWithId<E::State>,
+        M: Mutator<I, E::State>,
+        E::State: HasClientPerfMonitor + HasCorpus + HasMetadata + HasRand,
+        Z: Evaluator<E, EM, State = E::State>,
+        I: MutatedTransform<E::Input, E::State> + Clone,
 {
     /// The mutator, added to this stage
     #[inline]
@@ -71,14 +71,14 @@ where
 }
 
 impl<E, F, EM, I, M, Z> Stage<E, EM, Z> for PowerMutationalStageWithId<E, F, EM, I, M, Z>
-where
-    E: Executor<EM, Z> + HasObservers,
-    EM: UsesState<State = E::State>,
-    F: TestcaseScoreWithId<E::State>,
-    M: Mutator<I, E::State>,
-    E::State: HasClientPerfMonitor + HasCorpus + HasMetadata + HasRand,
-    Z: Evaluator<E, EM, State = E::State>,
-    I: MutatedTransform<E::Input, E::State> + Clone,
+    where
+        E: Executor<EM, Z> + HasObservers,
+        EM: UsesState<State = E::State>,
+        F: TestcaseScoreWithId<E::State>,
+        M: Mutator<I, E::State>,
+        E::State: HasClientPerfMonitor + HasCorpus + HasMetadata + HasRand,
+        Z: Evaluator<E, EM, State = E::State>,
+        I: MutatedTransform<E::Input, E::State> + Clone,
 {
     #[inline]
     #[allow(clippy::let_and_return)]
@@ -90,19 +90,21 @@ where
         manager: &mut EM,
         corpus_idx: CorpusId,
     ) -> Result<(), Error> {
+        println!("===============================================================执行mutate stage perform======================================================================");
         let ret = self.perform_mutational(fuzzer, executor, state, manager, corpus_idx);
+        // print_global_vars();
         ret
     }
 }
 
 impl<E, F, EM, M, Z> PowerMutationalStageWithId<E, F, EM, E::Input, M, Z>
-where
-    E: Executor<EM, Z> + HasObservers,
-    EM: UsesState<State = E::State>,
-    F: TestcaseScoreWithId<E::State>,
-    M: Mutator<E::Input, E::State>,
-    E::State: HasClientPerfMonitor + HasCorpus + HasMetadata + HasRand,
-    Z: Evaluator<E, EM, State = E::State>,
+    where
+        E: Executor<EM, Z> + HasObservers,
+        EM: UsesState<State = E::State>,
+        F: TestcaseScoreWithId<E::State>,
+        M: Mutator<E::Input, E::State>,
+        E::State: HasClientPerfMonitor + HasCorpus + HasMetadata + HasRand,
+        Z: Evaluator<E, EM, State = E::State>,
 {
     /// Creates a new [`PowerMutationalStageWithId`]
     pub fn new(mutator: M) -> Self {
@@ -111,13 +113,13 @@ where
 }
 
 impl<E, F, EM, I, M, Z> PowerMutationalStageWithId<E, F, EM, I, M, Z>
-where
-    E: Executor<EM, Z> + HasObservers,
-    EM: UsesState<State = E::State>,
-    F: TestcaseScoreWithId<E::State>,
-    M: Mutator<I, E::State>,
-    E::State: HasClientPerfMonitor + HasCorpus + HasMetadata + HasRand,
-    Z: Evaluator<E, EM, State = E::State>,
+    where
+        E: Executor<EM, Z> + HasObservers,
+        EM: UsesState<State = E::State>,
+        F: TestcaseScoreWithId<E::State>,
+        M: Mutator<I, E::State>,
+        E::State: HasClientPerfMonitor + HasCorpus + HasMetadata + HasRand,
+        Z: Evaluator<E, EM, State = E::State>,
 {
     /// Creates a new transforming [`PowerMutationalStageWithId`]
     pub fn transforming(mutator: M) -> Self {

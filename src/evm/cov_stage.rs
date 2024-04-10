@@ -190,6 +190,7 @@ where
         }
 
         self.coverage.deref().borrow_mut().record_instruction_coverage();
+        // println!("{:?}", self.coverage.t);
         self.last_corpus_idx = last_idx;
         Ok(())
     }

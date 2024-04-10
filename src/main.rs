@@ -26,6 +26,7 @@ pub mod tracer;
 
 #[cfg(feature = "sui_support")]
 pub mod r#move;
+mod global_info;
 
 use clap::{Parser, Subcommand};
 use evm::{evm_main, EvmArgs};

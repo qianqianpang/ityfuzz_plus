@@ -5,7 +5,7 @@
     - 包括三个层面的变异器(智能合约的交易结构，包括交易的发送者、接收者、交易值（转移的以太币数量）和输入数据)
       1 合约函数的参数
       2 tx
-      3 环境参数
+      3 环境参数,随即变异（包括：调用者（caller）、余额（balance）、交易值（txn_value）、gas价格（gas_price）、基础费用（basefee）、时间戳（timestamp）、coinbase、gas限制（gas_limit）、区块号（number）和prevrandao。 ）
 
 
 

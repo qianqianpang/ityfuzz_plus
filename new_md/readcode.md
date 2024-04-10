@@ -374,6 +374,21 @@ tuple_list包含：
 -如果ABI类型为`TDynamic`，则对其进行变异。这是通过`byte_mutator_with_expansion`函数实现的。
 -如果ABI类型为`TArray`，则对其进行变异。如果数组是动态大小的，那么它将有80%的概率选择一个元素进行变异，10%的概率增加数组的大小，10%的概率减小数组的大小。如果数组是静态大小的，那么它将选择一个元素进行变异。
 -如果ABI类型为`TUnknown`，则对其进行变异。如果`a_unknown`的大小为0，那么它将被设置为`AEmpty`类型。否则，它将有80%的概率通过`mutate_with_vm_slots`函数进行变异，20%的概率被替换为一个新的ABI样本。
+-类型具体含义：
+    T256/// All 256-bit types (uint8, uint16, uint32, uint64, uint128, uint256, address...)
+    TArray/// All array types (X[], X[n], (X,Y,Z))
+    TDynamic/// All dynamic types (string, bytes...)
+    TEmpty/// Empty type (nothing)
+    TUnknown/// Unknown type (e.g., those we don't know ABI, it can be any type)
+
+##### 2)`sample_abi`函数
+它的目的是生成一个随机的`BoxedABI`实例。`BoxedABI`是一个结构体，它包含一个实现了`ABI` trait的对象和一个函数哈希值。
+函数的输入参数包括一个可变引用的状态对象和一个大小值。状态对象需要满足多个trait约束，包括`State`、`HasRand`、`HasItyState`、`HasMaxSize`和`HasCaller`。这些trait提供了随机数生成、状态管理、最大大小获取和调用者信息等功能。
+根据输入的大小值是否等于32来决定生成的`BoxedABI`实例的类型。
+1. 如果大小值等于32，函数将生成一个静态类型的`BoxedABI`实例。它会随机选择生成一个`A256`类型的实例，这个实例可以代表一个非地址类型的256位数据，或者一个地址类型的数据。
+2. 如果大小值不等于32，函数将生成一个动态类型的`BoxedABI`实例。它会随机选择生成一个`ADynamic`类型的实例（代表一段动态数据），一个`AArray`类型的实例（代表一个元组），或者一个`AArray`类型的实例（代表一个数组）。对于数组，还会进一步随机选择是生成一个固定大小的数组还是一个动态大小的数组。
+这个函数的主要用途是在进行模糊测试时，生成随机的ABI实例以测试智能合约的行为。
+
 
 
 ### 10. 库函数——scheduled_mutate函数
@@ -481,8 +496,7 @@ current_idx = i;：更新当前的索引。
 `report.summarize();`：打印出覆盖率报告的摘要。
 
 ### ♥需要改写的函数
-1. feedback.rs
-   ——增加指令有趣的反馈
+1. global_info.rs——增加指令有趣的反馈
 2. mutator.rs/mutate函数
    ——不再使用随机数控制变异，而是使用模拟退火算法选择变异器进行变异（如具体的数值100   80 ；state.rand_mut()）
 3. input.rs/mutate函数
@@ -506,7 +520,7 @@ current_idx = i;：更新当前的索引。
 - `Liquidate`：这是一个清算交易，但它已经被弃用。在这种交易中，清算人可以清算超过抵押率的债务，从而获得一部分抵押品。
 
 ##### 2）ABILossyType
-ABI类型是用于描述Ethereum智能合约函数参数和返回值的数据类型。五种ABI类型：
+根据.abi文件中 input字段的类型判断：
 1. `T256`：表示所有256位的类型，包括`uint8`，`uint16`，`uint32`，`uint64`，`uint128`，`uint256`和`address`等。例如，一个函数可能有一个`uint256`类型的参数，表示一个无符号256位整数。
 2. `TArray`：表示所有的数组类型。例如，一个函数可能有一个`uint[]`类型的参数，表示一个无符号整数的动态数组，或者一个`uint[3]`类型的参数，表示一个包含三个元素的无符号整数的静态数组。
 3. `TDynamic`：表示所有的动态类型，如`string`和`bytes`等。例如，一个函数可能有一个`string`类型的参数，表示一个动态长度的字符串。
@@ -514,35 +528,31 @@ ABI类型是用于描述Ethereum智能合约函数参数和返回值的数据类
 5. `TUnknown`：表示未知类型，即我们不知道ABI的情况，它可以是任何类型。这通常用于处理我们无法识别的复杂类型。
 
 ##### 3）EVMInput
-`let input = EVMInput {
-input_type: EVMInputTy::ABI, // 输入类型为ABI
-caller: "0x1234567890abcdef1234567890abcdef12345678".parse().unwrap(), // 调用者地址
-contract: "0xabcdef1234567890abcdef1234567890abcdef12".parse().unwrap(), // 合约地址
-data: Some(BoxedABI { // ABI数据
-b: Box::new(A256 {
-data: vec![0; 32], // 256位数据表示参数
-is_address: false, // 此参数不是地址
-dont_mutate: false, // 此参数应该被突变
-inner_type: A256InnerType::Uint, // 此参数是一个uint
-}),
-function: [0; 4], // 函数哈希,四字节数组，每个函数调用只需要一个四字节的函数选择器
-}),
-sstate: StagedVMState { // 阶段性的VM状态
-// ...省略了具体的字段...
-},
-sstate_idx: 0, // 阶段性VM状态在语料库中的索引
-txn_value: Some(EVMU256::from(1000)), // 交易值为1000 wei
-step: false, // 是否从上一次控制泄漏处恢复执行
-env: Env { // 环境（区块、时间戳等）
-// ...省略了具体的字段...
-},
-access_pattern: Rc::new(RefCell::new(AccessPattern::new())), // 访问模式
-liquidation_percent: 0, // 清算的代币百分比
-direct_data: Bytes::from(vec![0; 32]), // 直接数据，即原始输入数据
-randomness: vec![0; 32], // 为突变器提供的额外随机字节
-repeat: 1, // 执行交易的次数
-swap_data: HashMap::new(), // 交换数据
-};`
+* input_type: EVMInputTy::ABI, // 输入类型为ABI 
+* caller: "0x1234567890abcdef1234567890abcdef12345678".parse().unwrap(), // 调用者地址 
+* contract: "0xabcdef1234567890abcdef1234567890abcdef12".parse().unwrap(), // 合约地址 
+* data: Some(BoxedABI { // ABI数据
+    b: Box::new(A256 {
+        data: vec![0; 32], // 256位数据表示参数
+        is_address: false, // 此参数不是地址
+        dont_mutate: false, // 此参数应该被突变
+        inner_type: A256InnerType::Uint, // 此参数是一个uint
+        }),
+    function: [0; 4], // 函数哈希,四字节数组，每个函数调用只需要一个四字节的函数选择器 }),
+* sstate: StagedVMState { // 阶段性的VM状态 }, 
+* sstate_idx: 0, // 阶段性VM状态在语料库中的索引 
+* txn_value: Some(EVMU256::from(1000)), // 交易值为1000 wei 
+* step: false, // 是否从上一次控制泄漏处恢复执行 
+* env: Env { // 环境（区块、时间戳等）}, 
+* access_pattern: Rc::new(RefCell::new(AccessPattern::new())), // 访问模式 
+* liquidation_percent: 0, // 清算的代币百分比 
+* direct_data: Bytes::from(vec![0; 32]), // 直接数据，即原始输入数据 
+* randomness: vec![0; 32], // 为突变器提供的额外随机字节 
+* repeat: 1, // 执行交易的次数 
+* swap_data: HashMap::new(), // 交换数据
+
+
+
 ### 🌙其他
 ###### 1. 测试结果：
 
