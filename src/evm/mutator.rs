@@ -55,20 +55,22 @@ pub struct AccessPattern {
 
 impl AccessPattern {
     /// Create a new access pattern with all fields set to false
+    /// 将这些访问模式设置为true将增加实验的复杂性，因为它增加了实验的可能状态空间。
+    /// 这可能会使得实验更难以理解和控制，但也可能使得实验能够覆盖到更多的可能情况。
     pub fn new() -> Self {
         Self {
             balance: vec![],
-            caller: false,
-            call_value: false,
-            gas_price: false,
-            number: false,
-            coinbase: false,
-            timestamp: false,
-            prevrandao: false,
-            gas_limit: false,
-            chain_id: false,
-            basefee: false,
-            difficulty: false,
+            caller: true,
+            call_value: true,
+            gas_price: true,
+            number: true,
+            coinbase: true,
+            timestamp: true,
+            prevrandao: true,
+            gas_limit: true,
+            chain_id: true,
+            basefee: true,
+            difficulty: true,
             // limit_contract_code_size: false,
         }
     }
@@ -86,7 +88,7 @@ impl AccessPattern {
             0x45 => self.gas_limit = true,
             0x46 => self.chain_id = true,
             0x48 => self.basefee = true,
-            0x50 => self.difficulty = true,
+            // 0x50 => self.difficulty = true,
             // 0x52 => self.limit_contract_code_size = true,
             _ => {}
         }
