@@ -2,6 +2,7 @@
 //! stage.
 
 use core::{fmt::Debug, marker::PhantomData};
+use std::sync::atomic::Ordering;
 use crate::global_info::print_global_vars;
 use libafl::{
     corpus::{Corpus, CorpusId},
@@ -13,7 +14,7 @@ use libafl::{
     state::{HasClientPerfMonitor, HasCorpus, HasMetadata, HasRand, UsesState},
     Error,
 };
-
+use crate::global_info::{MUTATE_SUCCESS_COUNT};
 pub trait TestcaseScoreWithId<S>
     where
         S: HasMetadata + HasCorpus,
@@ -90,6 +91,8 @@ impl<E, F, EM, I, M, Z> Stage<E, EM, Z> for PowerMutationalStageWithId<E, F, EM,
         manager: &mut EM,
         corpus_idx: CorpusId,
     ) -> Result<(), Error> {
+        // 在即将变异的地方增加计数
+        MUTATE_SUCCESS_COUNT.fetch_add(1, Ordering::SeqCst);
         println!("===============================================================执行mutate stage perform======================================================================");
         let ret = self.perform_mutational(fuzzer, executor, state, manager, corpus_idx);
         print_global_vars();

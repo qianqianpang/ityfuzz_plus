@@ -12,7 +12,7 @@ use std::{
 };
 use std::sync::atomic::Ordering;
 use crate::global_info::{IS_OBJECTIVE, IS_CMP_INTERESTING, IS_DATAFLOW_INTERESTING, IS_INSTRUCTION_INTERESTING, print_global_vars};
-
+use crate::global_info::{MUTATE_SUCCESS_COUNT};
 use itertools::Itertools;
 use libafl::{
     fuzzer::Fuzzer,
@@ -571,6 +571,9 @@ for ItyFuzzer<VS, Loc, Addr, Out, CS, IS, F, IF, IFR, I, OF, S, OT, CI, SM>
                     .join("\n");
 
                 println!("\n\n\n😊😊 Found vulnerabilities! \n\n");
+                // 获取当前的变异次数
+                let success_count = MUTATE_SUCCESS_COUNT.load(Ordering::SeqCst);
+                println!("变异了{}次",success_count);
                 let cur_report =
                     format!(
                         "================ Description ================\n{}\n================ Trace ================\n{}\n",

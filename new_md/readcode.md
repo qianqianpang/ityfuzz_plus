@@ -364,6 +364,7 @@ Skipped，则会跳过当前迭代。
    对于其他类型的输入，闭包会根据一定的概率变异清算百分比或随机数，并根据变异结果返回相应的结果。
 
 *
+
 如果在上述过程中，输入没有被变异，那么就会尝试20次变异输入，每次变异都会调用mutator闭包。如果在这20次尝试中，有一次变异成功，那么就返回MutationResult::
 Mutated，表示输入已经被变异。否则，就返回MutationResult::Skipped，表示输入没有被变异。
 
@@ -599,14 +600,14 @@ current_idx = i;：更新当前的索引。
 ### ♥需要改写的函数
 
 1. global_info.rs——增加指令有趣的反馈
-2. mutator.rs/mutate函数
+2. abi.rs/mutate_with_vm_slots函数 ——修改变异的规则，如不用确定的10%
+
+3. mutator.rs/mutate函数
    ——不再使用随机数控制变异，而是使用模拟退火算法选择变异器进行变异（如具体的数值100 80 ；state.rand_mut()）
-3. input.rs/mutate函数
+4. input.rs/mutate函数
    ——不再使用随机数控制变异，而是使用模拟退火算法选择变异器进行变异(如 state.rand_mut())
-4. input.rs/mutate_env_with_access_pattern函数
-   ——修改为不随机选择
-5. abi.rs/mutate_with_vm_slots函数
-   ——修改变异的规则，如不用确定的10%
+5. input.rs/mutate_env_with_access_pattern函数——修改为不随机选择
+
 6. self.schedule(state, input)函数
    ——不随机选择
 
