@@ -40,6 +40,13 @@ lazy_static! {
     pub static ref P_TABLE: HashMap<&'static str, HashMap<&'static str, f64>> = {
         let mut table = HashMap::new();
 
+         // 添选择变异env  or args
+        let mut input_mutate_map = HashMap::new();
+        input_mutate_map.insert("INPUT_MUTATE_ENV", 0.05);
+        input_mutate_map.insert("INPUT_MUTATE_ARGS", 0.95);
+        table.insert("INPUT_MUTATE", input_mutate_map);
+
+        //变异ABI-args
         let mut t256_address_map = HashMap::new();
         t256_address_map.insert("T256_ADDRESS_RANDOM", 0.5);
         t256_address_map.insert("T256_ADDRESS_SELF", 0.5);
@@ -56,6 +63,42 @@ lazy_static! {
         tunknown.insert("TUNKNOWN_ABI", 0.3);
         table.insert("TUNKNOWN", tunknown);
 
+        //变异env
+        let mut env_map = HashMap::new();
+        env_map.insert("ENV_CALLER", 0.1);
+        env_map.insert("ENV_BALANCE", 0.1);
+        env_map.insert("ENV_GASPRICE", 0.05);
+        env_map.insert("ENV_BASEFEE", 0.05);
+        env_map.insert("ENV_TIMESTAMP", 0.1);
+        env_map.insert("ENV_COINBASE", 0.1);
+        env_map.insert("ENV_GASLIMIT", 0.1);
+        env_map.insert("ENV_NUMBER", 0.1);
+        env_map.insert("ENV_CALLVALUE", 0.1);
+        env_map.insert("ENV_PREVRANDAO", 0.1);
+        env_map.insert("ENV_DIFFICULTY", 0.1);
+        table.insert("ENV", env_map);
+
+
+        //byte_mutations操作
+        let mut byte_mutations_map = HashMap::new();
+        byte_mutations_map.insert("BitFlipMutator", 0.05);
+        byte_mutations_map.insert("ByteFlipMutator", 0.05);
+        byte_mutations_map.insert("ByteIncMutator", 0.05);
+        byte_mutations_map.insert("ByteDecMutator", 0.05);
+        byte_mutations_map.insert("ByteNegMutator", 0.05);
+        byte_mutations_map.insert("ByteRandMutator", 0.10);
+        byte_mutations_map.insert("ByteAddMutator", 0.05);
+        byte_mutations_map.insert("WordAddMutator", 0.05);
+        byte_mutations_map.insert("DwordAddMutator", 0.05);
+        byte_mutations_map.insert("QwordAddMutator", 0.05);
+        byte_mutations_map.insert("ByteInterestingMutator", 0.05);
+        byte_mutations_map.insert("WordInterestingMutator", 0.05);
+        byte_mutations_map.insert("DwordInterestingMutator", 0.05);
+        byte_mutations_map.insert("BytesSetMutator", 0.05);
+        byte_mutations_map.insert("BytesRandSetMutator", 0.10);
+        byte_mutations_map.insert("BytesSwapMutator", 0.10);
+        byte_mutations_map.insert("ConstantHintedMutator", 0.05);
+        table.insert("BYTE_MUTATIONS", byte_mutations_map);
         table
     };
 }

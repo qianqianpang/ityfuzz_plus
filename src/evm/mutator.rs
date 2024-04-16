@@ -68,7 +68,7 @@ impl AccessPattern {
             timestamp: true,
             prevrandao: true,
             gas_limit: true,
-            chain_id: true,
+            chain_id: false,
             basefee: true,
             difficulty: true,
             // limit_contract_code_size: false,

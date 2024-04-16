@@ -35,6 +35,7 @@ use std::collections::HashSet;
 use std::sync::Mutex;
 use lazy_static::lazy_static;
 use libafl_bolts::bolts_prelude::RomuDuoJrRand;
+use crate::global_info::{P_TABLE, RANDOM_P, select_mutation_action};
 
 // 创建一个全局的池来存储所有的变异值
 lazy_static! {
@@ -712,6 +713,7 @@ macro_rules! impl_env_mutator_u256_pool {
         where
             S: State + HasCaller<EVMAddress> + HasRand + HasMetadata,
         {
+            println!("新方法——变异  number gas_limit timestamp basefee");
             let mut pool = $pool.lock().unwrap();
 
             // 有概率直接用pool中的值替换
@@ -949,16 +951,21 @@ impl EVMInput {
     {
         let ap = self.get_access_pattern().deref().borrow().clone();
         let mut mutators = vec![];
+        let mut mutators_name: Vec<&'static str> = Vec::new();
         macro_rules! add_mutator {
             ($item: ident) => {
                 if ap.$item {
+                    // println!("{}_{} ", mutators.len(),stringify!($item));
                     mutators.push(&EVMInput::$item as &dyn Fn(&mut EVMInput, &mut S) -> MutationResult);
+                    mutators_name.push(stringify!($item));
                 }
             };
 
             ($item: ident, $cond: expr) => {
                 if $cond {
+                    // println!("{}_{} ", mutators.len(),stringify!($item));
                     mutators.push(&EVMInput::$item as &dyn Fn(&mut EVMInput, &mut S) -> MutationResult);
+                    mutators_name.push(stringify!($item));
                 }
             };
         }
@@ -973,7 +980,6 @@ impl EVMInput {
         add_mutator!(coinbase);
         add_mutator!(gas_limit);
         add_mutator!(number);
-        add_mutator!(call_value);
         // add_mutator!(chain_id);
         add_mutator!(prevrandao);
         add_mutator!(difficulty);
@@ -983,8 +989,80 @@ impl EVMInput {
             return MutationResult::Skipped;
         }
 
-        let mutator = mutators[state.rand_mut().below(mutators.len() as u64) as usize];
-        mutator(self, state)
+        // let mutator = mutators[state.rand_mut().below(mutators.len() as u64) as usize];
+        // mutator(self, state)
+        //重写选择mutator
+        let selected_mutator_name = select_mutation_action(&P_TABLE, "ENV", unsafe { RANDOM_P });
+        match selected_mutator_name {
+            "ENV_CALLER" =>{
+                let idx = mutators_name.iter().position(|&r| r == "caller").unwrap();
+                let mutator = mutators[idx];
+                mutator(self, state)
+            },
+            "ENV_BALANCE" => {
+                match mutators_name.iter().position(|&r| r == "balance") {
+                    Some(idx) => {
+                        let mutator = mutators[idx];
+                        mutator(self, state)
+                    },
+                    None => {
+                        self.mutate_env_with_access_pattern(state)
+                    }
+                }
+            },
+            "ENV_GASPRICE" => {
+                let idx = mutators_name.iter().position(|&r| r == "gas_price").unwrap();
+                let mutator = mutators[idx];
+                mutator(self, state)
+            },
+            "ENV_BASEFEE" => {
+                let idx = mutators_name.iter().position(|&r| r == "basefee").unwrap();
+                let mutator = mutators[idx];
+                mutator(self, state)
+            },
+            "ENV_TIMESTAMP" =>{
+                let idx = mutators_name.iter().position(|&r| r == "timestamp").unwrap();
+                let mutator = mutators[idx];
+                mutator(self, state)
+            },
+            "ENV_COINBASE" => {
+                let idx = mutators_name.iter().position(|&r| r == "coinbase").unwrap();
+                let mutator = mutators[idx];
+                mutator(self, state)
+            },
+            "ENV_GASLIMIT" => {
+                let idx = mutators_name.iter().position(|&r| r == "gas_limit").unwrap();
+                let mutator = mutators[idx];
+                mutator(self, state)
+            },
+            "ENV_NUMBER" => {
+                let idx = mutators_name.iter().position(|&r| r == "number").unwrap();
+                let mutator = mutators[idx];
+                mutator(self, state)
+            },
+            "ENV_CALLVALUE" => {
+                match mutators_name.iter().position(|&r| r == "call_value") {
+                    Some(idx) => {
+                        let mutator = mutators[idx];
+                        mutator(self, state)
+                    },
+                    None => {
+                        self.mutate_env_with_access_pattern(state)
+                    }
+                }
+            },
+            "ENV_PREVRANDAO" => {
+                let idx = mutators_name.iter().position(|&r| r == "prevrandao").unwrap();
+                let mutator = mutators[idx];
+                mutator(self, state)
+            },
+            "ENV_DIFFICULTY" => {
+                let idx = mutators_name.iter().position(|&r| r == "difficulty").unwrap();
+                let mutator = mutators[idx];
+                mutator(self, state)
+            },
+            _ => { unreachable!()}
+        }
     }
 }
 
@@ -1073,6 +1151,23 @@ impl VMInputT<EVMState, EVMAddress, EVMAddress, ConciseEVMInput> for EVMInput {
             + HasCaller<EVMAddress>
             + HasMetadata,
     {
+        // let action = select_mutation_action(&P_TABLE, "INPUT_MUTATE", unsafe { RANDOM_P });
+        // match action {
+        //     "INPUT_MUTATE_ENV" => {
+        //         return self.mutate_env_with_access_pattern(state);
+        //     }
+        //     "INPUT_MUTATE_ARGS" => {
+        //         let vm_slots = self.get_state().get(&self.get_contract()).cloned();
+        //         match self.data {
+        //             // Some(ref mut data) => data.mutate_with_vm_slots(state, vm_slots),
+        //             Some(ref mut data) => data.mutate_with_vm_slots_ptable(state, vm_slots),
+        //             None => MutationResult::Skipped,
+        //         }
+        //     }
+        //     _ => {
+        //         unreachable!();
+        //     }
+        // }
         if state.rand_mut().next() % 100 > 87 || self.data.is_none() {
             return self.mutate_env_with_access_pattern(state);
         }

@@ -490,6 +490,7 @@ TUnknown/// Unknown type (e.g., those we don't know ABI, it can be any type)
 调用state.rand_mut().below(self.mutations().len() as u64)来随机选择一个突变器。rand_mut()
 .below函数会生成一个小于给定上限（这里是mutations的长度）的随机数
 
+**get_and_mutate()函数**
 ### 11. feedback.rs
 
 ##### 1）cmpfeedback是否有趣
@@ -600,16 +601,13 @@ current_idx = i;：更新当前的索引。
 ### ♥需要改写的函数
 
 1. global_info.rs——增加指令有趣的反馈
-2. abi.rs/mutate_with_vm_slots函数 ——修改变异的规则，如不用确定的10%
+2. abi.rs/mutate_with_vm_slots函数 ——修改变异的规则，如不用确定的10% 
+3. input.rs/mutate_env_with_access_pattern函数——修改为不随机选择
+4. input.rs/mutate函数 ——不再使用随机数控制变异(如 state.rand_mut())
+5. 重写库函数中的 self.schedule(state, input)函数 ——不随机选择
+    mutation_utils.rs    byte_mutator byte_mutator_expansion调用上面的
 
-3. mutator.rs/mutate函数
-   ——不再使用随机数控制变异，而是使用模拟退火算法选择变异器进行变异（如具体的数值100 80 ；state.rand_mut()）
-4. input.rs/mutate函数
-   ——不再使用随机数控制变异，而是使用模拟退火算法选择变异器进行变异(如 state.rand_mut())
-5. input.rs/mutate_env_with_access_pattern函数——修改为不随机选择
-
-6. self.schedule(state, input)函数
-   ——不随机选择
+6. mutator.rs/mutate函数 ——不再使用随机数控制变异，而是使用模拟退火算法选择变异器进行变异（如具体的数值100 80 ；state.rand_mut()）
 
 ### 🌙其他
 

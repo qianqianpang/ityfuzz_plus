@@ -591,7 +591,7 @@ impl BoxedABI {
                 let action = unsafe { select_mutation_action(&P_TABLE, "TUNKNOWN", RANDOM_P) };
                 match action {
                     "TUNKNOWN_SLOT" => {
-                        a_unknown.concrete.mutate_with_vm_slots(state, vm_slots)
+                        a_unknown.concrete.mutate_with_vm_slots_ptable(state, vm_slots)
                     }
                     "TUNKNOWN_ABI" => {
                         a_unknown.concrete = sample_abi(state, a_unknown.size);

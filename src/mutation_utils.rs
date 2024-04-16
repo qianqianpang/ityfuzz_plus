@@ -25,8 +25,8 @@ use libafl::{
         HasMetadata,
         Mutator,
         QwordAddMutator,
-        StdScheduledMutator,
         WordAddMutator,
+        StdScheduledMutator,
         WordInterestingMutator,
     },
     state::{HasMaxSize, HasRand, State},
@@ -36,6 +36,7 @@ use libafl_bolts::{impl_serdeany, prelude::Rand, tuples::tuple_list, Named};
 use serde::{Deserialize, Serialize};
 
 use crate::evm::types::EVMU256;
+use crate::sceduled_new::StdScheduledMutatorQQ;
 
 /// Constants in the contracts
 ///
@@ -172,6 +173,7 @@ where
     S: State + HasRand + HasMetadata,
     I: HasBytesVec + Input,
 {
+    //17
     let mutations = tuple_list!(
         BitFlipMutator::new(),
         ByteFlipMutator::new(),
@@ -193,10 +195,14 @@ where
     );
 
     if let Some(vm_slots) = vm_slots {
-        let mut mutator = StdScheduledMutator::new((VMStateHintedMutator::new(&vm_slots), mutations));
+        // let mut mutator = StdScheduledMutator::new((VMStateHintedMutator::new(&vm_slots), mutations));
+        // mutator.mutate(state, input, 0).unwrap()
+        let mut mutator = StdScheduledMutatorQQ::new((VMStateHintedMutator::new(&vm_slots), mutations));
         mutator.mutate(state, input, 0).unwrap()
     } else {
-        let mut mutator = StdScheduledMutator::new(mutations);
+        // let mut mutator = StdScheduledMutator::new(mutations);
+        // mutator.mutate(state, input, 0).unwrap()
+        let mut mutator = StdScheduledMutatorQQ::new(mutations);
         mutator.mutate(state, input, 0).unwrap()
     }
 }
@@ -237,10 +243,14 @@ where
     );
 
     if let Some(vm_slots) = vm_slots {
-        let mut mutator = StdScheduledMutator::new((VMStateHintedMutator::new(&vm_slots), mutations));
+        // let mut mutator = StdScheduledMutator::new((VMStateHintedMutator::new(&vm_slots), mutations));
+        // mutator.mutate(state, input, 0).unwrap()
+        let mut mutator = StdScheduledMutatorQQ::new((VMStateHintedMutator::new(&vm_slots), mutations));
         mutator.mutate(state, input, 0).unwrap()
     } else {
-        let mut mutator = StdScheduledMutator::new(mutations);
+        // let mut mutator = StdScheduledMutator::new(mutations);
+        // mutator.mutate(state, input, 0).unwrap()
+        let mut mutator = StdScheduledMutatorQQ::new(mutations);
         mutator.mutate(state, input, 0).unwrap()
     }
 }
