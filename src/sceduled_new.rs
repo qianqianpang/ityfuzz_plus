@@ -36,7 +36,7 @@ impl<I, MT, S> Named for StdScheduledMutatorQQ<I, MT, S> where MT: MutatorsTuple
 
 impl<I, MT, S> Mutator<I, S> for StdScheduledMutatorQQ<I, MT, S> where MT: MutatorsTuple<I, S> + NamedTuple, S:  HasRand {
     fn mutate(&mut self, state: &mut S, input: &mut I, stage_idx: i32) -> Result<MutationResult, Error> {
-        self.inner.mutate(state, input, stage_idx)
+        self.scheduled_mutate(state, input, stage_idx)
     }
 }
 
@@ -52,7 +52,7 @@ where
 
     fn schedule(&self, state: &mut S, input: &I) -> MutationId {
         // self.inner.schedule(state, input)
-        println!("我重写的2");
+        // println!("我重写的2");
         debug_assert!(!self.mutations().is_empty());
         // state.rand_mut().below(self.mutations().len() as u64).into()
         let action_type = "BYTE_MUTATIONS";
@@ -67,7 +67,18 @@ where
         input: &mut I,
         stage_idx: i32,
     ) -> Result<MutationResult, Error> {
-        self.inner.scheduled_mutate(state, input, stage_idx)
+        let mut r = MutationResult::Skipped;
+        let num = self.iterations(state, input);
+        for _ in 0..num {
+            let idx = self.schedule(state, input);
+            let outcome = self
+                .mutations_mut()
+                .get_and_mutate(idx, state, input, stage_idx)?;
+            if outcome == MutationResult::Mutated {
+                r = MutationResult::Mutated;
+            }
+        }
+        Ok(r)
     }
 }
 
