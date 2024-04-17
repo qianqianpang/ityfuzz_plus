@@ -358,8 +358,7 @@ Skipped，则会跳过当前迭代。
    然后，如果输入和状态满足新状态的约束，就将新状态设置为输入的状态，
 3. 【变异data】如果输入的状态有后续执行，并且输入不是步骤，并且随机数小于60，那么如果输入的类型不是Borrow，就将输入设置为步骤，并设置后续执行所需的长度，然后进行一系列的变异
 4. 闭包:对输入进行变异。这个闭包没有参数，返回一个MutationResult枚举，表示变异的结果。  
-   首先，闭包检查输入 input 是否是一个步骤输入（step input），即是否需要从控制泄露（control
-   leak）处继续执行。如果是，闭包只变异输入的字节，而不改变虚拟机（VM）状态。根据一定的概率，闭包会尝试进行清算（liquidate）操作，
+   首先，闭包检查输入 input 是否是一个步骤输入（step input），即是否需要从控制泄露（control leak）处继续执行。如果是，闭包只变异输入的字节，而不改变虚拟机（VM）状态。根据一定的概率，闭包会尝试进行清算（liquidate）操作，
    如果输入是借贷（borrow）类型的，则闭包会变异随机数，并返回相应的变异结果。
    对于其他类型的输入，闭包会根据一定的概率变异清算百分比或随机数，并根据变异结果返回相应的结果。
 
@@ -598,16 +597,6 @@ current_idx = i;：更新当前的索引。
   `report.dump_file(self.work_dir.clone());`：将覆盖率报告保存到文件中。
   `report.summarize();`：打印出覆盖率报告的摘要。
 
-### ♥需要改写的函数
-
-1. global_info.rs——增加指令有趣的反馈
-2. abi.rs/mutate_with_vm_slots函数 ——修改变异的规则，如不用确定的10% 
-3. input.rs/mutate_env_with_access_pattern函数——修改为不随机选择
-4. input.rs/mutate函数 ——不再使用随机数控制变异(如 state.rand_mut())
-5. 重写库函数中的 self.schedule(state, input)函数 ——不随机选择
-    mutation_utils.rs    byte_mutator byte_mutator_expansion调用上面的
-
-6. mutator.rs/mutate函数 ——不再使用随机数控制变异，而是使用模拟退火算法选择变异器进行变异（如具体的数值100 80 ；state.rand_mut()）
 
 ### 🌙其他
 

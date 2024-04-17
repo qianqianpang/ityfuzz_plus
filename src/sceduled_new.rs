@@ -6,7 +6,7 @@ use libafl::Error;
 
 use libafl_bolts::Named;
 use libafl_bolts::tuples::NamedTuple;
-use crate::global_info::{P_TABLE,RANDOM_P, select_mutation_action};
+use crate::global_info::{increment_mutation_op, P_TABLE, RANDOM_P, select_mutation_action};
 
 
 pub struct StdScheduledMutatorQQ<I, MT, S>
@@ -57,7 +57,8 @@ where
         // state.rand_mut().below(self.mutations().len() as u64).into()
         let action_type = "BYTE_MUTATIONS";
         let action = select_mutation_action(&P_TABLE, action_type, unsafe { RANDOM_P });
-        let idx = self.mutations().names().iter().position(|&r| r == action).unwrap();
+        increment_mutation_op("BYTE_MUTATIONS", action);
+        let idx = self.mutations().names().iter().position(|&r| r == action).unwrap_or(2);
         idx.into()
     }
 

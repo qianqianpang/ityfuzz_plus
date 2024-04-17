@@ -3,7 +3,7 @@
 
 use core::{fmt::Debug, marker::PhantomData};
 use std::sync::atomic::Ordering;
-use crate::global_info::print_global_vars;
+use crate::global_info::{adjust_p_table, calculate_value, print_feedback_info, print_mutation_op, print_p_table, print_value, reset_p_table};
 use libafl::{
     corpus::{Corpus, CorpusId},
     executors::{Executor, HasObservers},
@@ -95,7 +95,16 @@ impl<E, F, EM, I, M, Z> Stage<E, EM, Z> for PowerMutationalStageWithId<E, F, EM,
         MUTATE_SUCCESS_COUNT.fetch_add(1, Ordering::SeqCst);
         println!("===============================================================执行mutate stage perform======================================================================");
         let ret = self.perform_mutational(fuzzer, executor, state, manager, corpus_idx);
-        print_global_vars();
+        // print_feedback_info();
+        // calculate_value();
+        // println!("===============================更新ptable之前=============================");
+        // print_value();
+        // print_mutation_op();
+        // print_p_table();
+        adjust_p_table();
+        // println!("===============================更新ptable之后=============================");
+        // print_mutation_op();
+        // print_p_table();
         ret
     }
 }
