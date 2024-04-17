@@ -69,6 +69,7 @@ use crate::{
     scheduler::SortedDroppingScheduler,
     state::{FuzzState, HasCaller, HasExecutionResult, HasPresets},
 };
+use crate::global_info::{print_p_table, reset_p_table,reset_p_table2};
 
 #[allow(clippy::type_complexity)]
 pub fn evm_fuzzer(
@@ -88,6 +89,9 @@ pub fn evm_fuzzer(
     state: &mut EVMFuzzState,
 ) {
     info!("\n\n ================ EVM Fuzzer Start ===================\n\n");
+    // reset_p_table();
+    reset_p_table2();
+    // print_p_table();
 
     // create work dir if not exists
     let _path = Path::new(config.work_dir.as_str());

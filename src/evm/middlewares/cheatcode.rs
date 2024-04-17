@@ -7,7 +7,8 @@ use std::{
     ops::{BitAnd, Not},
     sync::Arc,
 };
-
+use crate::global_info::IS_INSTRUCTION_INTERESTING;
+use std::sync::atomic::Ordering;
 use alloy_primitives::{Address, Bytes as AlloyBytes, Log as RawLog, B256};
 use alloy_sol_types::{SolInterface, SolValue};
 use bytes::Bytes;
@@ -147,6 +148,8 @@ enum OpcodeType {
     RealCall,
     /// SLOAD, SSTORE
     Storage,
+    //SELF DESTRUCT
+    SelfDestruct,
     /// REVERT
     Revert,
     /// LOG0~LOG4
@@ -179,7 +182,7 @@ macro_rules! cheat_call_error {
 
 impl<SC> Middleware<SC> for Cheatcode<SC>
     where
-        SC: Scheduler<State=EVMFuzzState> + Clone + Debug,
+        SC: Scheduler<State = EVMFuzzState> + Clone + Debug,
 {
     unsafe fn on_step(&mut self, interp: &mut Interpreter, host: &mut FuzzHost<SC>, _state: &mut EVMFuzzState) {
         let op = interp.current_opcode();
@@ -199,7 +202,7 @@ impl<SC> Middleware<SC> for Cheatcode<SC>
 
 impl<SC> Cheatcode<SC>
     where
-        SC: Scheduler<State=EVMFuzzState> + Clone,
+        SC: Scheduler<State = EVMFuzzState> + Clone,
 {
     pub fn new() -> Self {
         Self {
@@ -235,8 +238,6 @@ impl<SC> Cheatcode<SC>
             VmCalls::chainId(args) => self.chain_id(&mut host.env, args),
             VmCalls::txGasPrice(args) => self.tx_gas_price(&mut host.env, args),
             VmCalls::coinbase(args) => self.coinbase(&mut host.env, args),
-            VmCalls::difficulty(args) => self.difficulty(&mut host.env, args),
-            // VmCalls::limit_contract_code_size(args) => self.limit_contract_code_size(&mut host.env, args),
             VmCalls::load(args) => self.load(&host.evmstate, args),
             VmCalls::store(args) => self.store(&mut host.evmstate, args),
             VmCalls::etch(args) => self.etch(host, args),
@@ -392,7 +393,7 @@ impl<SC> Cheatcode<SC>
 /// Cheat VmCalls
 impl<SC> Cheatcode<SC>
     where
-        SC: Scheduler<State=EVMFuzzState> + Clone,
+        SC: Scheduler<State = EVMFuzzState> + Clone,
 {
     /// Sets `block.timestamp`.
     #[inline]
@@ -425,12 +426,7 @@ impl<SC> Cheatcode<SC>
         }
         None
     }
-    // fn limit_contract_code_size(&self, env: &mut Env, args: Vm::limit_contract_code_size) -> Option<Vec<u8>> {
-    //     let new_size_limit = args.newSizeLimit;
-    //     env.cfg.limit_contract_code_size = new_size_limit;
-    //
-    //     None
-    // }
+
     /// Sets `block.prevrandao`.
     /// Not available on EVM versions before Paris. Use `difficulty` instead.
     #[inline]
@@ -1023,7 +1019,7 @@ fn try_memory_resize(interp: &mut Interpreter, offset: usize, len: usize) -> Res
 
 fn get_opcode_type(op: u8, interp: &Interpreter) -> OpcodeType {
     match op {
-        opcode::CALL | opcode::CALLCODE | opcode::DELEGATECALL | opcode::STATICCALL => {
+        opcode::CALL | opcode::CALLCODE |  opcode::STATICCALL => {
             let target: B160 = B160(
                 interp.stack().peek(1).unwrap().to_be_bytes::<{ U256::BYTES }>()[12..]
                     .try_into()
@@ -1035,9 +1031,33 @@ fn get_opcode_type(op: u8, interp: &Interpreter) -> OpcodeType {
             } else {
                 OpcodeType::RealCall
             }
-        }
-        opcode::SLOAD | opcode::SSTORE => OpcodeType::Storage,
-        opcode::LOG0..=opcode::LOG4 => OpcodeType::Log,
+        },
+        opcode::DELEGATECALL => {
+            IS_INSTRUCTION_INTERESTING.store(2, Ordering::SeqCst);
+            let target: B160 = B160(
+                interp.stack().peek(1).unwrap().to_be_bytes::<{ U256::BYTES }>()[12..]
+                    .try_into()
+                    .unwrap(),
+            );
+
+            if target.as_slice() == CHEATCODE_ADDRESS.as_slice() {
+                OpcodeType::CheatCall
+            } else {
+                OpcodeType::RealCall
+            }
+        },
+        opcode::SLOAD | opcode::SSTORE |opcode::MSTORE| opcode::MSTORE8 => {
+            IS_INSTRUCTION_INTERESTING.store(1, Ordering::SeqCst);
+            OpcodeType::Storage
+        },
+        opcode::SELFDESTRUCT => {
+            IS_INSTRUCTION_INTERESTING.store(3, Ordering::SeqCst);
+            OpcodeType::SelfDestruct
+        },
+        opcode::LOG0..=opcode::LOG4 => {
+            IS_INSTRUCTION_INTERESTING.store(0, Ordering::SeqCst);
+            OpcodeType::Log
+        },
         opcode::REVERT => OpcodeType::Revert,
         _ => OpcodeType::Careless,
     }

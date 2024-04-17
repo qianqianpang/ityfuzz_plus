@@ -18,7 +18,7 @@ use once_cell::sync::Lazy;
 use revm_primitives::U256;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use tracing::debug;
-use crate::global_info::{P_TABLE, RANDOM_P, select_mutation_action};
+use crate::global_info::{increment_mutation_op, P_TABLE, RANDOM_P, select_mutation_action};
 use super::{
     types::checksum,
     utils::{colored_address, prettify_value},
@@ -517,9 +517,11 @@ impl BoxedABI {
                         let action = select_mutation_action(&P_TABLE, "T256_ADDRESS", RANDOM_P);
                         match action {
                             "T256_ADDRESS_RANDOM" => {
+                                increment_mutation_op("T256_ADDRESS", "T256_ADDRESS_RANDOM");
                                 a256.data = state.get_rand_address().0.to_vec();
                             }
                             "T256_ADDRESS_SELF" => {
+                                increment_mutation_op("T256_ADDRESS", "T256_ADDRESS_SELF");
                                 a256.data = [0; 20].to_vec();
                             }
                             _ => {
@@ -550,11 +552,13 @@ impl BoxedABI {
                     let action = unsafe { select_mutation_action(&P_TABLE, "TARRAY_DYNAMIC", RANDOM_P) };
                     match action {
                         "TARRAY_DYNAMIC_RANDOM" => {
+                            increment_mutation_op("TARRAY_DYNAMIC", "TARRAY_DYNAMIC_RANDOM");
                             let index: usize = state.rand_mut().next() as usize % data_len;
                             let result = aarray.data[index].mutate_with_vm_slots(state, vm_slots);
                             return result;
                         }
                         "TARRAY_DYNAMIC_INCREASE" => {
+                            increment_mutation_op("TARRAY_DYNAMIC", "TARRAY_DYNAMIC_INCREASE");
                             // increase size
                             if state.max_size() <= aarray.data.len() {
                                 return MutationResult::Skipped;
@@ -564,6 +568,7 @@ impl BoxedABI {
                             }
                         }
                         "TARRAY_DYNAMIC_DECREASE" => {
+                            increment_mutation_op("TARRAY_DYNAMIC", "TARRAY_DYNAMIC_DECREASE");
                             // decrease size
                             if aarray.data.is_empty() {
                                 return MutationResult::Skipped;
@@ -591,9 +596,11 @@ impl BoxedABI {
                 let action = unsafe { select_mutation_action(&P_TABLE, "TUNKNOWN", RANDOM_P) };
                 match action {
                     "TUNKNOWN_SLOT" => {
+                        increment_mutation_op("TUNKNOWN", "TUNKNOWN_SLOT");
                         a_unknown.concrete.mutate_with_vm_slots_ptable(state, vm_slots)
                     }
                     "TUNKNOWN_ABI" => {
+                        increment_mutation_op("TUNKNOWN", "TUNKNOWN_ABI");
                         a_unknown.concrete = sample_abi(state, a_unknown.size);
                         MutationResult::Mutated
                     }

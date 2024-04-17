@@ -11,7 +11,7 @@ use std::{
     time::Duration,
 };
 use std::sync::atomic::Ordering;
-use crate::global_info::{IS_OBJECTIVE, IS_CMP_INTERESTING, IS_DATAFLOW_INTERESTING, IS_INSTRUCTION_INTERESTING, print_global_vars};
+use crate::global_info::{IS_OBJECTIVE, IS_CMP_INTERESTING, IS_DATAFLOW_INTERESTING, IS_INSTRUCTION_INTERESTING, print_feedback_info, print_p_table, print_mutation_op};
 use crate::global_info::{MUTATE_SUCCESS_COUNT};
 use itertools::Itertools;
 use libafl::{
@@ -419,19 +419,16 @@ for ItyFuzzer<VS, Loc, Addr, Out, CS, IS, F, IF, IFR, I, OF, S, OT, CI, SM>
             .infant_feedback
             .is_interesting(state, manager, &input, observers, &exitkind)?;
         IS_CMP_INTERESTING.store(is_infant_interesting, Ordering::SeqCst);
-        // println!("有趣1——is_cmp_interesting: {:?}", is_infant_interesting);
 
         let is_solution = self
             .objective
             .is_interesting(state, manager, &input, observers, &exitkind)?;
-        // println!("有趣3——is_objective_bug: {:?}", is_solution);
         IS_OBJECTIVE.store(is_solution, Ordering::SeqCst);
 
 
         let is_infant_solution = self
             .infant_result_feedback
             .is_interesting(state, manager, &input, observers, &exitkind)?;
-        // println!("有趣2——is_dataflow_feedback: {:?}", is_infant_solution);
         IS_DATAFLOW_INTERESTING.store(is_infant_solution, Ordering::SeqCst);
 
         // add the trace of the new state
@@ -474,7 +471,6 @@ for ItyFuzzer<VS, Loc, Addr, Out, CS, IS, F, IF, IFR, I, OF, S, OT, CI, SM>
                 .is_interesting(state, manager, &input, observers, &exitkind)?;
 
             if is_corpus {
-                // println!("有趣4——is_corpus: {:?}", is_corpus);
                 res = ExecuteInputResult::Corpus;
 
                 // Debugging prints
@@ -550,7 +546,7 @@ for ItyFuzzer<VS, Loc, Addr, Out, CS, IS, F, IF, IFR, I, OF, S, OT, CI, SM>
             }
             // find the solution
             ExecuteInputResult::Solution => {
-                print_global_vars();
+                print_feedback_info();
                 state
                     .metadata_map_mut()
                     .get_mut::<BugMetadata>()
@@ -574,6 +570,7 @@ for ItyFuzzer<VS, Loc, Addr, Out, CS, IS, F, IF, IFR, I, OF, S, OT, CI, SM>
                 // 获取当前的变异次数
                 let success_count = MUTATE_SUCCESS_COUNT.load(Ordering::SeqCst);
                 println!("变异了{}次",success_count);
+                print_p_table();
                 let cur_report =
                     format!(
                         "================ Description ================\n{}\n================ Trace ================\n{}\n",
