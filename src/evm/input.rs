@@ -8,7 +8,6 @@ use libafl::{
     prelude::{HasBytesVec, HasMaxSize, HasMetadata, HasRand, State},
 };
 use libafl_bolts::{prelude::Rand, HasLen};
-use rand::Rng;
 use revm_primitives::Env;
 use serde::{Deserialize, Deserializer, Serialize};
 use super::{
@@ -32,9 +31,8 @@ use crate::{
     state_input::StagedVMState,
 };
 use std::collections::HashSet;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use lazy_static::lazy_static;
-use libafl_bolts::bolts_prelude::RomuDuoJrRand;
 use crate::global_info::{increment_mutation_op, P_TABLE, RANDOM_P, select_mutation_action};
 
 // 创建一个全局的池来存储所有的变异值
@@ -78,7 +76,7 @@ pub trait EVMInputT {
 
     /// Get the access pattern of the input, used by the mutator to determine
     /// what to mutate
-    fn get_access_pattern(&self) -> &Rc<RefCell<AccessPattern>>;
+    fn get_access_pattern(&self) -> &std::sync::Arc<Mutex<AccessPattern>>;
 
     /// Get the transaction value in wei
     fn get_txn_value(&self) -> Option<EVMU256>;
@@ -142,7 +140,8 @@ pub struct EVMInput {
 
     /// Access pattern
     #[serde(skip_deserializing)]
-    pub access_pattern: Rc<RefCell<AccessPattern>>,
+    // pub access_pattern: Rc<RefCell<AccessPattern>>,
+    pub access_pattern: Arc<Mutex<AccessPattern>>,
 
     /// Percentage of the token amount in all callers' account to liquidate
     pub liquidation_percent: u8,
@@ -346,7 +345,7 @@ impl ConciseEVMInput {
                 txn_value: self.txn_value,
                 step: self.step,
                 env: self.env.clone(),
-                access_pattern: Rc::new(RefCell::new(AccessPattern::new())),
+                access_pattern: Arc::new(Mutex::new(AccessPattern::new())),
                 liquidation_percent: self.liquidation_percent,
                 #[cfg(not(feature = "debug"))]
                 direct_data: Bytes::new(),
@@ -642,7 +641,7 @@ impl std::fmt::Debug for EVMInput {
 impl EVMInputT for EVMInput {
     fn set_contract_and_abi(&mut self, contract: EVMAddress, abi: Option<BoxedABI>) {
         self.contract = contract;
-        self.access_pattern = Rc::new(RefCell::new(AccessPattern::new()));
+        self.access_pattern = Arc::new(Mutex::new(AccessPattern::new()));
         self.data = abi;
     }
 
@@ -665,7 +664,7 @@ impl EVMInputT for EVMInput {
         &self.env
     }
 
-    fn get_access_pattern(&self) -> &Rc<RefCell<AccessPattern>> {
+    fn get_access_pattern(&self) -> &std::sync::Arc<Mutex<AccessPattern>> {
         &self.access_pattern
     }
 
@@ -949,7 +948,8 @@ impl EVMInput {
         where
             S: State + HasCaller<EVMAddress> + HasRand + HasMetadata,
     {
-        let ap = self.get_access_pattern().deref().borrow().clone();
+        // let ap = self.get_access_pattern().deref().borrow().clone();
+        let ap = self.get_access_pattern().lock().unwrap().clone();
         let mut mutators = vec![];
         let mut mutators_name: Vec<&'static str> = Vec::new();
         macro_rules! add_mutator {

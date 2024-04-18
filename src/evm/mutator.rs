@@ -14,7 +14,7 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 use super::onchain::flashloan::CAN_LIQUIDATE;
 /// Mutator for EVM inputs
-use crate::evm::input::EVMInputT;
+use crate::evm::input::{EVMInput, EVMInputT};
 use crate::{
     evm::{
         abi::ABIAddressToInstanceMap,
@@ -26,6 +26,7 @@ use crate::{
     input::{ConciseSerde, VMInputT},
     state::{HasCaller, HasItyState, HasPresets, InfantStateState},
 };
+use crate::dqn_algorithm::{set_global_input};
 use crate::global_info::{P_TABLE, select_mutation_action, RANDOM_P, increment_mutation_op};
 
 /// [`AccessPattern`] records the access pattern of the input during execution.
@@ -220,6 +221,12 @@ impl<VS, Loc, Addr, I, S, SC, CI> Mutator<I, S> for FuzzMutator<VS, Loc, Addr, S
     #[allow(unused_assignments)]
     fn mutate(&mut self, state: &mut S, input: &mut I, _stage_idx: i32) -> Result<MutationResult, Error> {
         // if the VM state of the input is not initialized, swap it with a state
+        if let Some(evm_input) = input.as_any().downcast_ref::<EVMInput>() {
+            set_global_input(evm_input.clone());
+        }
+
+        // print_input_fields(&input);
+
         if !input.get_staged_state().initialized {
             let concrete = state.get_infant_state(&mut self.infant_scheduler).unwrap();
             input.set_staged_state(concrete.1, concrete.0);

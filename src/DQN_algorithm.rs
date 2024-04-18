@@ -59,71 +59,7 @@ fn dqn_algorithm() -> PyResult<()> {
     Python::with_gil(|py| {
         // 定义 Python 代码字符串，实现 DQN 算法的部分代码将放在这里
         let code = r#"
-        import torch
-        import torch.nn as nn
-        import torch.optim as optim
-        import numpy as np
-        import random
-        from collections import deque
-        class DQN(nn.Module):
-            def __init__(self, state_dim, action_dim):
-                super(DQN, self).__init__()
-                self.fc1 = nn.Linear(state_dim, 128)
-                self.fc2 = nn.Linear(128, 64)
-                self.fc3 = nn.Linear(64, action_dim)
 
-            def forward(self, state):
-                x = torch.relu(self.fc1(state))
-                x = torch.relu(self.fc2(x))
-                return self.fc3(x)
-
-        class ReplayBuffer:  #经验回放缓冲区，用于存储和抽样过去的转换（状态，动作，奖励，新状态）
-            def __init__(self, capacity):
-                self.buffer = deque(maxlen=capacity)
-
-            def push(self, state, action, reward, next_state):
-                self.buffer.append((state, action, reward, next_state))
-
-            def sample(self, batch_size):
-                state, action, reward, next_state = zip(*random.sample(self.buffer, batch_size))
-                return np.stack(state), action, reward, np.stack(next_state)
-
-            def __len__(self):
-                return len(self.buffer)
-
-        class DQNAgent:
-            def __init__(self, state_dim, action_dim, replay_buffer):
-                self.state_dim = state_dim
-                self.action_dim = action_dim
-                self.replay_buffer = replay_buffer
-                self.model = DQN(state_dim, action_dim)
-                self.optimizer = optim.Adam(self.model.parameters())
-
-            def update_model(self, batch_size):
-                if len(self.replay_buffer) < batch_size:
-                    return
-                state, action, reward, next_state = self.replay_buffer.sample(batch_size)
-                state = torch.FloatTensor(state)
-                action = torch.LongTensor(action)
-                reward = torch.FloatTensor(reward)
-                next_state = torch.FloatTensor(next_state)
-
-                curr_q_value = self.model(state).gather(1, action.unsqueeze(1)).squeeze(1)
-                next_q_value = self.model(next_state).max(1)[0].detach()
-                expected_q_value = reward + 0.99 * next_q_value
-
-                loss = F.mse_loss(curr_q_value, expected_q_value)
-
-                self.optimizer.zero_grad()
-                loss.backward()
-                self.optimizer.step()
-
-            def get_action(self, state):
-                state = torch.FloatTensor(state).unsqueeze(0)
-                with torch.no_grad():
-                    q_value = self.model(state)
-                action = q_value.argmax(1).item()
-                return action
         "#;
         // 定义 Python 代码运行的作用域，导入 numpy 和 torch 模块
         let scope = [("numpy", py.import("numpy")?), ("torch", py.import("torch")?)].into_py_dict(py);

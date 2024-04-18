@@ -11,6 +11,7 @@ use std::{
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
+use std::sync::Mutex;
 
 use alloy_dyn_abi::DynSolType;
 use alloy_sol_types::SolValue;
@@ -187,7 +188,7 @@ where
     // controlled by onchain module, if sload cant find the slot, use this value
     pub next_slot: EVMU256,
 
-    pub access_pattern: Rc<RefCell<AccessPattern>>,
+    pub access_pattern: Arc<Mutex<AccessPattern>>,
 
     pub bug_hit: bool,
     pub current_typed_bug: Vec<(String, (EVMAddress, usize))>,
@@ -341,7 +342,7 @@ where
             middlewares_latent_call_actions: vec![],
             scheduler,
             next_slot: Default::default(),
-            access_pattern: Rc::new(RefCell::new(AccessPattern::new())),
+            access_pattern: Arc::new(Mutex::new(AccessPattern::new())),
             bug_hit: false,
             call_count: 0,
             #[cfg(feature = "print_logs")]
@@ -1144,7 +1145,8 @@ where
                 _ => {}
             }
 
-            self.access_pattern.deref().borrow_mut().decode_instruction(interp);
+            // self.access_pattern.deref().borrow_mut().decode_instruction(interp);
+            self.access_pattern.lock().unwrap().decode_instruction(interp);
         }
         Continue
     }
@@ -1368,7 +1370,7 @@ where
                             txn_value: if abi.is_payable { Some(EVMU256::ZERO) } else { None },
                             step: false,
                             env: Default::default(),
-                            access_pattern: Rc::new(RefCell::new(AccessPattern::new())),
+                            access_pattern: Arc::new(Mutex::new(AccessPattern::new())),
                             liquidation_percent: 0,
                             input_type: EVMInputTy::ABI,
                             direct_data: Default::default(),
