@@ -107,6 +107,29 @@ lazy_static! {
         byte_mutations_map.insert("QwordAddMutator", 0.04295490970285134);
         table.insert("BYTE_MUTATIONS", byte_mutations_map);
 
+        let mut byte_mutations_expansion_map = HashMap::new();
+        byte_mutations_expansion_map.insert("BitFlipMutator", 1.0 / 20.0);
+        byte_mutations_expansion_map.insert("ByteFlipMutator", 1.0 / 20.0);
+        byte_mutations_expansion_map.insert("ByteIncMutator", 1.0 / 20.0);
+        byte_mutations_expansion_map.insert("ByteDecMutator", 1.0 / 20.0);
+        byte_mutations_expansion_map.insert("ByteNegMutator", 1.0 / 20.0);
+        byte_mutations_expansion_map.insert("ByteRandMutator", 1.0 / 20.0);
+        byte_mutations_expansion_map.insert("ByteAddMutator", 1.0 / 20.0);
+        byte_mutations_expansion_map.insert("WordAddMutator", 1.0 / 20.0);
+        byte_mutations_expansion_map.insert("DwordAddMutator", 1.0 / 20.0);
+        byte_mutations_expansion_map.insert("QwordAddMutator", 1.0 / 20.0);
+        byte_mutations_expansion_map.insert("ByteInterestingMutator", 1.0 / 20.0);
+        byte_mutations_expansion_map.insert("WordInterestingMutator", 1.0 / 20.0);
+        byte_mutations_expansion_map.insert("DwordInterestingMutator", 1.0 / 20.0);
+        byte_mutations_expansion_map.insert("BytesSetMutator", 1.0 / 20.0);
+        byte_mutations_expansion_map.insert("BytesRandSetMutator", 1.0 / 20.0);
+        byte_mutations_expansion_map.insert("BytesSwapMutator", 1.0 / 20.0);
+        byte_mutations_expansion_map.insert("BytesCopyMutator", 1.0 / 20.0);
+        byte_mutations_expansion_map.insert("BytesExpandMutator", 1.0 / 20.0);
+        byte_mutations_expansion_map.insert("BytesInsertMutator", 1.0 / 20.0);
+        byte_mutations_expansion_map.insert("BytesRandInsertMutator", 1.0 / 20.0);
+        table.insert("BYTE_MUTATIONS_EXPANSION", byte_mutations_expansion_map);
+
         //选择mutate with template,state,data,bibao
         let mut mutate_template_map = HashMap::new();
         mutate_template_map.insert("USE_TEMPLATE", 0.2972036085374526);

@@ -55,11 +55,21 @@ where
         // println!("我重写的2");
         debug_assert!(!self.mutations().is_empty());
         // state.rand_mut().below(self.mutations().len() as u64).into()
-        let action_type = "BYTE_MUTATIONS";
-        let action = select_mutation_action(&P_TABLE, action_type, unsafe { RANDOM_P });
-        increment_mutation_op("BYTE_MUTATIONS", action);
-        let idx = self.mutations().names().iter().position(|&r| r == action).unwrap_or(2);
-        idx.into()
+        // println!("Length of mutations: {}", self.inner.mutations().len());
+        if self.inner.mutations().len() >18 {
+            let action_type = "BYTE_MUTATIONS";
+            let action = select_mutation_action(&P_TABLE, action_type, unsafe { RANDOM_P });
+            increment_mutation_op("BYTE_MUTATIONS", action);
+            let idx = self.mutations().names().iter().position(|&r| r == action).unwrap_or(2);
+            idx.into()
+        }else {
+            let action_type = "BYTE_MUTATIONS_EXPANSION";
+            let action = select_mutation_action(&P_TABLE, action_type, unsafe { RANDOM_P });
+            increment_mutation_op("BYTE_MUTATIONS_EXPANSION", action);
+            let idx = self.mutations().names().iter().position(|&r| r == action).unwrap_or(2);
+            idx.into()
+        }
+
     }
 
     fn scheduled_mutate(
