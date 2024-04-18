@@ -49,6 +49,7 @@ no_etherscan = []
 
 
 [dependencies]
+pyo3 = { version = "0.21.2", features = ["extension-module"] }
 bytes = { version = "1.2.1", features = ["serde"] }
 retry = "2.0.0"
 serde_cbor = "0.11.2"

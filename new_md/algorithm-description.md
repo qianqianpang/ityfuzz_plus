@@ -1,11 +1,11 @@
-### Multi-armed bandit algorithm
+### Multi-armed bandit algorithm(power_sched.rs选择如何调整ptable)
 #### 1.定义并补充变异操作：包括三个层面
       1 函数参数
       2 tx顺序==state 快照
       3 环境参数：
         -包括：调用者（caller）、余额（balance）、交易值（txn_value）、gas价格（gas_price）、基础费用（basefee）、时间戳（timestamp）、coinbase、gas限制（gas_limit）、区块号（number）和prevrandao。 ）
         -其他：gas_price 越高，交易越快得到处理。。貌似在离线测试没有影响gas_price.是由两部分组成的：基本费用（由协议自动计算）和优先费用（由用户输入）。基本费用根据网络拥堵情况而变化，优先费用由用户决定）
-#### 2.定义变异概率表PTable
+#### 2.定义变异概率表PTable（evm_fuzzer.rs中选择是否重置ptable）
     1) 自定义值
     2) 均等概率值
     3) 随机生成概率值
@@ -58,6 +58,7 @@ x,y,z：更新PTable的超参数
 3. 测试环境是啥？提前部署需要用到的？
 4. should_havoc 还没考虑
 5. 考虑突变叠加？多个突变阶段
+6. 当有两个.solc文件时，编译哪个
 
 ### =========================================
 
@@ -87,4 +88,16 @@ x,y,z：更新PTable的超参数
     选择一个动作。有一定的概率随机选择一个动作（为了探索），否则选择模型预测的奖励最高的动作（为了利用）。
     执行选择的动作，获取新的状态和奖励，将转换（状态，动作，奖励，新状态）存储在经验回放内存中。
     从经验回放内存中随机抽取一批转换，用这些转换来更新模型。计算模型预测的Q值和实际的Q值（奖励加上新状态的最大预期奖励），然后根据这两者之间的差异来更新模型。
-//使用pyo3将python代码嵌入rs代码
+
+### 已完成
+
+1. GLOBAL_INPUT线程安全问题
+修改：
+pub access_pattern: Arc<Mutex<AccessPattern>>, &std::sync::Arc<Mutex<AccessPattern>>  Arc::new(Mutex::new(AccessPattern::new())),
+pub trait ABI: CloneABI + Send +Sync
+access_pattern: Arc::new(Mutex::new(AccessPattern::new()))
+
+### todo
+testcase  还是input作为state
+
+

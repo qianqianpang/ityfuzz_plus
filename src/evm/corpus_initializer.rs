@@ -8,6 +8,7 @@ use std::{
     rc::Rc,
     time::Duration,
 };
+use std::sync::{Arc, Mutex};
 
 use bytes::Bytes;
 use hex;
@@ -536,7 +537,7 @@ where
             txn_value: if abi.is_payable { Some(EVMU256::ZERO) } else { None },
             step: false,
             env: artifacts.initial_env.clone(),
-            access_pattern: Rc::new(RefCell::new(AccessPattern::new())),
+            access_pattern: Arc::new(Mutex::new(AccessPattern::new())),
             liquidation_percent: 0,
             input_type: EVMInputTy::ABI,
             direct_data: Default::default(),

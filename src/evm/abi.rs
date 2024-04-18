@@ -132,7 +132,7 @@ pub enum ABILossyType {
 
 /// Traits of ABI types (encoding, decoding, etc.)
 #[typetag::serde(tag = "type")]
-pub trait ABI: CloneABI {
+pub trait ABI: CloneABI + Send{
     /// Is the args static (i.e., fixed size)
     fn is_static(&self) -> bool;
     /// Get the ABI-encoded bytes of args
