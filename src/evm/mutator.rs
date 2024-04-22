@@ -26,7 +26,7 @@ use crate::{
     input::{ConciseSerde, VMInputT},
     state::{HasCaller, HasItyState, HasPresets, InfantStateState},
 };
-use crate::dqn_algorithm::{set_global_input};
+// use crate::dqn_alogritm::set_global_input;
 use crate::global_info::{P_TABLE, select_mutation_action, RANDOM_P, increment_mutation_op};
 
 /// [`AccessPattern`] records the access pattern of the input during execution.
@@ -95,6 +95,27 @@ impl AccessPattern {
             _ => {}
         }
     }
+    pub fn to_u32(&self) -> u32 {
+        let mut result = 0;
+
+        if self.caller { result |= 1 << 0; }
+        if self.call_value { result |= 1 << 1; }
+        if self.gas_price { result |= 1 << 2; }
+        if self.number { result |= 1 << 3; }
+        if self.coinbase { result |= 1 << 4; }
+        if self.timestamp { result |= 1 << 5; }
+        if self.prevrandao { result |= 1 << 6; }
+        if self.gas_limit { result |= 1 << 7; }
+        if self.chain_id { result |= 1 << 8; }
+        if self.basefee { result |= 1 << 9; }
+        if self.difficulty { result |= 1 << 10; }
+        // balance长度值放在最后
+        result |= (self.balance.len() as u32) << 11;
+
+        result
+    }
+
+
 }
 
 /// [`FuzzMutator`] is a mutator that mutates the input based on the ABI and
@@ -221,9 +242,9 @@ impl<VS, Loc, Addr, I, S, SC, CI> Mutator<I, S> for FuzzMutator<VS, Loc, Addr, S
     #[allow(unused_assignments)]
     fn mutate(&mut self, state: &mut S, input: &mut I, _stage_idx: i32) -> Result<MutationResult, Error> {
         // if the VM state of the input is not initialized, swap it with a state
-        if let Some(evm_input) = input.as_any().downcast_ref::<EVMInput>() {
-            set_global_input(evm_input.clone());
-        }
+        // if let Some(evm_input) = input.as_any().downcast_ref::<EVMInput>() {
+        //     set_global_input(evm_input.clone());
+        // }
 
         // print_input_fields(&input);
 

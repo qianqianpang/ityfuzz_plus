@@ -28,7 +28,8 @@ pub mod tracer;
 pub mod r#move;
 mod global_info;
 mod sceduled_new;
-mod dqn_algorithm;
+mod dqn_alogritm;
+mod drl;
 
 use clap::{Parser, Subcommand};
 use evm::{evm_main, EvmArgs};

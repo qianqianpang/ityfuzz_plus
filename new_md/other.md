@@ -226,3 +226,30 @@ fuzz_host
     - "chain_id"：发起交易的链的ID。
     - "nonce"：发起交易的地址的nonce值，用于防止重放攻击。
     - "access_list"：EIP-2930中引入的访问列表，用于指定交易可以访问的地址和存储位置。
+
+
+
+MUTATE_TEMPLATE:
+            0  0        0(input.mutate)           0(env)
+               1        1:end                     1(args)
+               2:end    2:end
+MUTATE_STATE:
+            1  0        0:end
+               1        1:end
+               2:end    2:end
+MUTATE_DATA:
+            2  0        0(input.mutate)           0(env)
+               1        1:end                     1(args)
+               2:end    2:end
+MUTATE_BYTE:
+            3  0        0:end                     0(env)
+               1        1(input.mutate)           1(args)
+               2:end    2:end
+MUTATE_BORROW:
+            4  0        0:end                      0(env)
+               1        1(input.mutate)            1(args)
+               2:end    2:end
+MUTATE_ALL:
+            5  0        0:end                     0(env)
+               1        1:end                     1(args)
+               2        2(input.mutate)

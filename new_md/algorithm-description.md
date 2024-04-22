@@ -57,8 +57,9 @@ x,y,z：更新PTable的超参数
 2. 能不能实现更多的变异算子。env_chain_id要不要加
 3. 测试环境是啥？提前部署需要用到的？
 4. should_havoc 还没考虑
-5. 考虑突变叠加？多个突变阶段
-6. 当有两个.solc文件时，编译哪个
+5. 清算10  or 0
+6. 考虑突变叠加？多个突变阶段
+7. 当有两个.solc文件时，编译哪个
 
 ### =========================================
 
@@ -89,15 +90,104 @@ x,y,z：更新PTable的超参数
     执行选择的动作，获取新的状态和奖励，将转换（状态，动作，奖励，新状态）存储在经验回放内存中。
     从经验回放内存中随机抽取一批转换，用这些转换来更新模型。计算模型预测的Q值和实际的Q值（奖励加上新状态的最大预期奖励），然后根据这两者之间的差异来更新模型。
 
-### 已完成
+
+#### 设计
+1. state_dim:12
+    * caller: {revm_primitives::bits::B160}// 调用者地址
+    * data: {core::option::Option<ityfuzz::evm::abi::BoxedABl>}
+    * sstate:  {ityfuz.state input:stagedVMState<revm primitives:bits.:.160,revm primitives:bis:B160,ityfuzz.evm.vmEVMState,ityfuzevm.input:.ConciseEVMinput>} // 阶段性的VM状态 ,
+    * txn_value: fcore::option::Option<ruint::Uint<...>>} // 交易值
+    * step: {bool} // 是否从上一次控制泄漏处恢复执行
+    * env: {revm_primitives::env::Env}// 环境（区块、时间戳等）,
+    * access_pattern:  {alloc::rc::Rc<core::cell::RefCell..>, alloc::alloc::Global>}  // 访问模式
+    * liquidation_percent: {u8} // 清算的代币百分比
+    * direct_data: {bytes::bytes::Bytes} // 直接数据，即原始输入数据
+    * randomness: {falloc::vec::Vec<u8,alloc::alloc::Global>} // 为突变器提供的额外随机字节
+    * repeat: {u64} // 执行交易的次数
+    * swap_data:  {std.collections:hash.map:HashMap<aloc..tring:.tring, ityfuz.generic_vm.m stateswapinfo, std.colections:hash.map.Randomstate> }// 交换数据
+2. action_dim
+   Key: "BYTE_MUTATIONS", Inner keys count: 16//Key: "BYTE_MUTATIONS_EXPANSION", Inner keys count: 19
+   Key: "ENV", Inner keys count: 11
+   Key: "TARRAY_DYNAMIC", Inner keys count: 3
+   Key: "MUTATE_ALL", Inner keys count: 3
+   Key: "INPUT_MUTATE", Inner keys count: 2
+   Key: "T256_ADDRESS", Inner keys count: 2
+   Key: "TUNKNOWN", Inner keys count: 2
+   Key: "MUTATE_TEMPLATE", Inner keys count: 2
+   Key: "MUTATE_STATE", Inner keys count: 2
+   Key: "MUTATE_DATA", Inner keys count: 2
+   Key: "MUTATE_BYTE", Inner keys count: 2
+   Key: "MUTATE_BORROW", Inner keys count: 2
+3. Adam优化器是一种用于深度学习模型的优化算法。它结合了两种扩展的随机梯度下降方法：自适应梯度算法（AdaGrad）和均方根传播（RMSProp）。Adam优化器计算自适应学习率，这意味着它保持每个参数的单独学习率，这些学习率根据参数的一阶矩估计（均值）和二阶矩估计（未中心的方差）进行调整。
+除了Adam优化器，还有许多其他的优化器可供选择，包括：
+    SGD（随机梯度下降）：这是最基本的优化器，但在某些情况下，它可能无法很好地收敛。
+    Momentum：这是SGD的一个变种，它在更新中考虑了过去的梯度，以加速SGD在相关方向上的收敛速度。
+    RMSprop：这是另一个可以加速SGD的优化器，它通过调整每个参数的学习率来实现。
+    Adagrad：这个优化器在训练过程中调整学习率，对于稀疏数据集来说，它表现得很好。
+    Adadelta：这是Adagrad的一个扩展，它试图减少Adagrad方法的急剧减小学习率的问题。
+    Adamax：这是Adam的一个变种，它的稳定性更好。
+    Nadam：这是Adam的一个变种，它结合了Adam和Nesterov的优点。
+4. 损失函数，使用的是均方误差损失（Mean Squared Error Loss）
+   `tch-rs`库实现了多种损失函数，包括但不限于以下几种：
+    `mse_loss`: 均方误差损失函数（Mean Squared Error Loss）。
+    `l1_loss`: L1损失函数，也称为绝对值损失函数。
+    `cross_entropy_loss`: 交叉熵损失函数，常用于分类问题。
+    `nll_loss`: 负对数似然损失函数（Negative Log Likelihood Loss），常用于多分类问题。
+    `binary_cross_entropy`: 二元交叉熵损失函数，常用于二分类问题。
+    `binary_cross_entropy_with_logits`: 带有logits的二元交叉熵损失函数，常用于二分类问题。
+    `poisson_nll_loss`: 泊松负对数似然损失函数。
+    `cosine_embedding_loss`: 余弦嵌入损失函数。
+    `hinge_embedding_loss`: Hinge嵌入损失函数。
+    `kl_div`: Kullback-Leibler散度损失函数。
+
+这些损失函数可以用于不同的机器学习任务，包括回归、分类、序列预测等。你可以根据你的任务需求选择合适的损失函数。
+#### 已完成
 
 1. GLOBAL_INPUT线程安全问题
 修改：
-pub access_pattern: Arc<Mutex<AccessPattern>>, &std::sync::Arc<Mutex<AccessPattern>>  Arc::new(Mutex::new(AccessPattern::new())),
-pub trait ABI: CloneABI + Send +Sync
-access_pattern: Arc::new(Mutex::new(AccessPattern::new()))
+    pub access_pattern: Arc<Mutex<AccessPattern>>, &std::sync::Arc<Mutex<AccessPattern>>  Arc::new(Mutex::new(AccessPattern::new())),
+    pub trait ABI: CloneABI + Send +Sync
+    access_pattern: Arc::new(Mutex::new(AccessPattern::new()))
+mutator。rs调用set GLOBAL_INPUT
+2. state 设计，暂定4个
+3. action编码  先实现全编码
+#### todo
 
-### todo
-testcase  还是input作为state
+1. env 的获取
+   根据gobal_input依次获取state中的字段
+2. 开始训练使用，将输出的action对接到代码调用
+3. dqnnet网络结构调整
 
 
+
+
+
+### ==================================================
+### 可能用到的代码：       
+
+// let data = self.data.get_bytes().iter().map(|&b| b as f32).collect::<Vec<_>>();//get_bytes可能不合适
+// let sstate_state = vec![self.sstate_state.get_hash() as f32];//hash()函数。。
+let sstate_initialize = vec![if self.sstate_initialize { 1.0 } else { 0.0 }];
+// let txn_value = vec![hash_to_u32(&self.txn_value.unwrap_or_default()) as f32];//hash()函数。。
+let step = vec![if self.step { 1.0 } else { 0.0 }];
+// let env = vec![env_to_u32(&self.env) as f32];
+// let access_pattern = vec![self.access_pattern.lock().unwrap().to_u32() as f32];
+let liquidation_percent = vec![self.liquidation_percent as f32];
+// let mut direct_data = self.direct_data.iter().map(|&b| b as f32).collect::<Vec<_>>();
+// let randomness = self.randomness.iter().map(|&b| b as f32).collect::<Vec<_>>();
+let repeat = vec![self.repeat as f32];
+
+        // let mut state_vec = vec![data, sstate_state, sstate_initialize, txn_value, step, env, access_pattern, liquidation_percent];
+        let mut state_vec = vec![sstate_initialize, step, liquidation_percent,repeat];
+        // state_vec.push(direct_data);
+        // state_vec.push(randomness);
+        // state_vec.push(repeat);
+
+        let flat_state_vec: Vec<f32> = state_vec.into_iter().flatten().collect();
+        let state_tensor = Tensor::of_slice(&flat_state_vec);
+        state_tensor
+
+
+### 其他
+
+为什么不选择分层DQN，而是用端到端的全编码

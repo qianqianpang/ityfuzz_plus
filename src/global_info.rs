@@ -70,7 +70,7 @@ lazy_static! {
         tunknown.insert("TUNKNOWN_ABI", 0.4724884878060147);
         table.insert("TUNKNOWN", tunknown);
 
-        //变异env
+        //变异env  10
         let mut env_map = HashMap::new();
         env_map.insert("ENV_CALLER", 0.10628936761790735);
         env_map.insert("ENV_BALANCE", 0.012087685458521048);
@@ -86,7 +86,7 @@ lazy_static! {
         table.insert("ENV", env_map);
 
 
-        //具体的byte_mutations操作
+        //具体的byte_mutations操作  17
         let mut byte_mutations_map = HashMap::new();
         byte_mutations_map.insert("ByteRandMutator", 0.04859009581991758);
         byte_mutations_map.insert("ByteInterestingMutator", 0.10802973675191048);
@@ -106,7 +106,7 @@ lazy_static! {
         byte_mutations_map.insert("WordAddMutator", 0.015502141527304095);
         byte_mutations_map.insert("QwordAddMutator", 0.04295490970285134);
         table.insert("BYTE_MUTATIONS", byte_mutations_map);
-
+        //20
         let mut byte_mutations_expansion_map = HashMap::new();
         byte_mutations_expansion_map.insert("BitFlipMutator", 1.0 / 20.0);
         byte_mutations_expansion_map.insert("ByteFlipMutator", 1.0 / 20.0);

@@ -76,7 +76,7 @@ pub trait EVMInputT {
 
     /// Get the access pattern of the input, used by the mutator to determine
     /// what to mutate
-    fn get_access_pattern(&self) -> &std::sync::Arc<Mutex<AccessPattern>>;
+    fn get_access_pattern(&self) -> &Arc<Mutex<AccessPattern>>;
 
     /// Get the transaction value in wei
     fn get_txn_value(&self) -> Option<EVMU256>;
