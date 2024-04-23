@@ -1,21 +1,20 @@
 use std::collections::HashMap;
 use std::collections::VecDeque;
+use std::hash::Hash;
 use std::sync::{Arc, Mutex, MutexGuard};
-use std::hash::{Hash, Hasher};
-use std::collections::hash_map::DefaultHasher;
+use std::sync::atomic::Ordering;
+use std::vec::Vec;
+
 use bytes::Bytes;
 use itertools::Itertools;
 use lazy_static::lazy_static;
 use revm_primitives::Env;
-use revm_primitives::ruint::Uint;
 use tch::{Kind, nn, nn::Module, nn::Optimizer, nn::OptimizerConfig, Tensor};
-use std::vec::Vec;
-use crate::evm::abi::BoxedABI;
+
 use crate::evm::input::{EVMInput, EVMInputTy};
 use crate::evm::mutator::AccessPattern;
-use crate::evm::types::{EVMAddress, EVMU256};
-use crate::evm::vm::EVMState;
-use crate::generic_vm::vm_state::VMStateT;
+use crate::evm::types::EVMAddress;
+use crate::global_info::{get_value, IS_OBJECTIVE};
 use crate::state_input::StagedVMState;
 
 lazy_static! {
@@ -46,9 +45,46 @@ pub fn set_global_input(new_input: EVMInput) {
     *GLOBAL_INPUT.lock().unwrap() = new_input;
 }
 
-//action设计===========也可以是数组？？tensor=============================================================================
+
 lazy_static! {
-    //最大值  520190016,i32表示从-2147483648到2147483647的整数，可能要改为f32  f64??????
+    pub static ref GLOBAL_MUTATION: Mutex<i64> = Mutex::new(0);
+}
+lazy_static! {
+    pub static ref MUTATOR_SELECTION: Mutex<HashMap<&'static str, u8>> = {
+        let mut m = HashMap::new();
+        m.insert("0_mutate_mode", 0);
+        m.insert("1_mutate_method", 0);
+        m.insert("2_mutate_input", 0);
+        m.insert("3_env_args", 0);
+        m.insert("4_mutate_field", 0);
+        m.insert("5_mutate_metho", 0);
+        m.insert("6_byte_expansion", 0);
+        m.insert("7_detail_mutation", 0);
+        Mutex::new(m)
+    };
+}
+pub fn parse_global_mutation() -> HashMap<&'static str, u8> {
+    let global_mutation = *GLOBAL_MUTATION.lock().unwrap();
+    let global_mutation_string = global_mutation.to_string();
+    let mutations: Vec<_>=global_mutation_string.chars().map(|c| c as u8).collect();
+
+    let mut mutator_selection = MUTATOR_SELECTION.lock().unwrap();
+    mutator_selection.insert("0_mutate_mode", mutations[0]);
+    mutator_selection.insert("1_mutate_method", mutations[1]);
+    mutator_selection.insert("2_mutate_input", mutations[2]);
+    mutator_selection.insert("3_env_args", mutations[3]);
+    mutator_selection.insert("4_mutate_field", mutations[4]);
+    mutator_selection.insert("5_mutate_metho", mutations[5]);
+    mutator_selection.insert("6_byte_expansion", mutations[6]);
+    let detail_mutation_value = (mutations[7] as i64) * 10 + (mutations[8] as i64);
+    mutator_selection.insert("7_detail_mutation", detail_mutation_value as u8);
+
+    mutator_selection.clone()
+}
+
+//action设计========================================================================================
+lazy_static! {
+    //最大值  520190016，可能要改为f32  f64??????
     static ref ACTIONS: Mutex<Vec<i64>> = Mutex::new(Vec::new());
 }
 fn encode_actions() -> Vec<i64> {
@@ -63,12 +99,12 @@ fn encode_actions() -> Vec<i64> {
     actions.clone()
 }
 //state的设计和方法==================================================================================
-// 通常会将所有的输入数据转换为浮点数（通常是32位浮点数，即f32），因为神经网络的运算（如加法、乘法、激活函数等）都是在浮点数上进行的。
+// 通常会将所有的输入数据转换为浮点数（通常是f32），因为神经网络的运算（如加法、乘法、激活函数等）都是在浮点数上进行的。
+// 状态通常是一个向量，表示环境的当前状态。在神经网络中，这通常是一个浮点数类型的张量（Tensor）。
 pub struct State {
     // data: BoxedABI,
     // sstate_state: EVMState,
     //state,swap_data,reentrancy_metadata,integer_overflow,arbitrary_calls,typed_bug,self_destruct,bug_hit,flashloan_data,post_execution,balance
-    //state（状态）：状态通常是一个向量，表示环境的当前状态。在神经网络中，这通常是一个浮点数类型的张量（Tensor）。例如，在Rust中，你可能会使用tch::Tensor来表示状态。
     sstate_initialize: bool,
     // txn_value: Option<EVMU256>,
     step: bool,
@@ -96,79 +132,46 @@ impl State {
 }
 
 
-// pub fn env_to_u32(env: &Env) -> u32 {
-//     let mut result = 0;
-//
-//     // For CfgEnv
-//     result |= (env.cfg.chain_id.low_u32() as u32) << 0;
-//     result |= (env.cfg.spec_id as u32) << 1;
-//     if let Some(limit_contract_code_size) = env.cfg.limit_contract_code_size {
-//         result |= (limit_contract_code_size as u32) << 2;
-//     }
-//     result |= (env.cfg.memory_limit as u32) << 3;
-//
-//     // For BlockEnv
-//     result |= (env.block.number.low_u32() as u32) << 4;
-//     result |= (env.block.coinbase.low_u32() as u32) << 5;
-//     result |= (env.block.timestamp.low_u32() as u32) << 6;
-//     result |= (env.block.difficulty.low_u32() as u32) << 7;
-//     if let Some(prevrandao) = env.block.prevrandao {
-//         result |= (prevrandao.low_u32() as u32) << 8;
-//     }
-//     result |= (env.block.basefee.low_u32() as u32) << 9;
-//     result |= (env.block.gas_limit.low_u32() as u32) << 10;
-//
-//     // For TxEnv
-//     result |= (env.tx.caller.low_u32() as u32) << 11;
-//     result |= (env.tx.gas_limit as u32) << 12;
-//     result |= (env.tx.gas_price.low_u32() as u32) << 13;
-//     if let Some(gas_priority_fee) = env.tx.gas_priority_fee {
-//         result |= (gas_priority_fee.low_u32() as u32) << 14;
-//     }
-//     result |= (env.tx.value.low_u32() as u32) << 15;
-//     if let Some(chain_id) = env.tx.chain_id {
-//         result |= (chain_id as u32) << 16;
-//     }
-//     if let Some(nonce) = env.tx.nonce {
-//         result |= (nonce as u32) << 17;
-//     }
-//
-//     result
-// }
-// fn hash_to_u32(value: &Uint<256, 4>) -> u32 {
-//     let mut hasher = DefaultHasher::new();
-//     value.hash(&mut hasher);
-//     hasher.finish() as u32
-// }
-//DQN===========================================================================================
-#[derive(Debug)]
-pub struct DqnNet {
-    fc1: nn::Linear,
-    fc2: nn::Linear,
-    fc3: nn::Linear,
+
+pub struct FuzzEnv {
+    state: EVMInput,
 }
 
-impl DqnNet {
-    // output_dim表示可能的动作的数量 现在=13，输入的维度现在是4
-    pub fn new(vs: &nn::Path, input_dim: i64, output_dim: i64) -> DqnNet {
-        let fc1 = nn::linear(vs / "fc1", input_dim, 128, Default::default());
-        let fc2 = nn::linear(vs / "fc2", 128, 64, Default::default());
-        let fc3 = nn::linear(vs / "fc3", 64, output_dim, Default::default());
-        DqnNet { fc1, fc2, fc3 }
+impl FuzzEnv {
+    pub fn new() -> FuzzEnv {
+        FuzzEnv {
+            state: get_global_input(),
+        }
+    }
+
+    pub fn reset(&mut self) -> Tensor {
+        let global_input = get_global_input();
+        let state = State {
+            sstate_initialize: global_input.sstate.initialized,
+            step: global_input.step,
+            liquidation_percent: global_input.liquidation_percent,
+            repeat: global_input.repeat as u64,
+        };
+        self.state = global_input;
+        state.to_tensor()
+    }
+    pub fn step(&mut self, action: i64) -> (Tensor, i64, bool) {
+        //返回一个元组，包含一个Tensor（新的状态），一个i64（奖励）和一个bool（表示任务是否完成）
+        // Modify the state based on the action
+
+        let reward = get_value() as i64;
+        let done = IS_OBJECTIVE.load(Ordering::SeqCst);
+
+        let global_input = get_global_input();
+        let state = State {
+            sstate_initialize: global_input.sstate.initialized,
+            step: global_input.step,
+            liquidation_percent: global_input.liquidation_percent,
+            repeat: global_input.repeat as u64,
+        };
+        (state.to_tensor(),reward,done)
     }
 }
-
-impl Module for DqnNet {
-    fn forward(&self, xs: &Tensor) -> Tensor {
-        xs.apply(&self.fc1)
-            .relu()
-            .apply(&self.fc2)
-            .relu()
-            .apply(&self.fc3)
-    }
-}
-
-
 //ReplayBuffer存储经验元组（state, action, reward, next_state）==========================================
 pub struct ReplayBuffer {
     buffer: VecDeque<(Tensor, i64, i64, Tensor)>,
@@ -202,6 +205,36 @@ impl ReplayBuffer {
         self.buffer.len()
     }
 }
+//DQN===========================================================================================
+#[derive(Debug)]
+pub struct DqnNet {
+    fc1: nn::Linear,
+    fc2: nn::Linear,
+    fc3: nn::Linear,
+}
+
+impl DqnNet {
+    // output_dim表示可能的动作的数量 现在=13，输入的维度现在是4
+    pub fn new(vs: &nn::Path, input_dim: i64, output_dim: i64) -> DqnNet {
+        let fc1 = nn::linear(vs / "fc1", input_dim, 128, Default::default());
+        let fc2 = nn::linear(vs / "fc2", 128, 64, Default::default());
+        let fc3 = nn::linear(vs / "fc3", 64, output_dim, Default::default());
+        DqnNet { fc1, fc2, fc3 }
+    }
+}
+
+impl Module for DqnNet {
+    fn forward(&self, xs: &Tensor) -> Tensor {
+        xs.apply(&self.fc1)
+            .relu()
+            .apply(&self.fc2)
+            .relu()
+            .apply(&self.fc3)
+    }
+}
+
+
+
 
 //DQNAgent==================================================================================
 pub struct DQNAgent {
@@ -265,84 +298,36 @@ impl DQNAgent {
     }
 }
 
+impl DQNAgent {
+    pub fn train(&mut self, env: &mut FuzzEnv, episodes: usize, batch_size: usize) {
+    for _ in 0..episodes {
+        let mut state = env.reset();
+        let mut done = false;
+        while !done {
+            let action = self.get_action(&state);
+            let (next_state, reward, is_done) = env.step(action);
+            self.replay_buffer.push(state, action, reward, next_state.clone(&Default::default()));
+            state = next_state;
+            self.update_model(batch_size);
+            done = is_done;
+        }
+    }
+}
 
-// pub struct FuzzEnv {
-//     state: EVMInput,
-// }
-//
-// impl FuzzEnv {
-//     pub fn new() -> FuzzEnv {
-//         FuzzEnv {
-//             state: get_global_input(),
-//         }
-//     }
-//
-//     pub fn reset(&mut self) -> Tensor {
-//         self.state = get_global_input();
-//         // Convert the state to a Tensor and return it
-//         // You need to implement the conversion from EVMInput to Tensor
-//     }
-//
-//     pub fn step(&mut self, action: i64) -> (Tensor, f64, bool) {
-//         // Modify the state based on the action
-//         // You need to implement this part
-//
-//         let reward = get_value() as f64;
-//         let done = false; // You need to determine when the task is done
-//
-//         // Convert the state to a Tensor and return it with the reward and done
-//         // You need to implement the conversion from EVMInput to Tensor
-//     }
-// }
-//
-// pub fn train(agent: &mut DQNAgent, env: &mut dyn Env, episodes: usize, batch_size: usize) {
-//     for _ in 0..episodes {
-//         let mut state = env.reset();
-//         let mut done = false;
-//         while !done {
-//             for stage_idx in 0..agent.action_dims.len() {
-//                 let action = agent.get_action(&state, stage_idx);
-//                 let (next_state, reward, is_done) = env.step(action);
-//                 agent.replay_buffers[stage_idx].push(state, action, reward as f64, next_state.clone());
-//                 state = next_state;
-//                 agent.update_model(batch_size, stage_idx);
-//                 done = is_done;
-//             }
-//         }
-//     }
-// }
-//
-// pub fn evaluate(agent: &DQNAgent, env: &mut dyn Env, episodes: usize) -> f64 {
-//     let mut total_rewards = 0.0;
-//     for _ in 0..episodes {
-//         let mut state = env.reset();
-//         let mut done = false;
-//         while !done {
-//             for stage_idx in 0..agent.action_dims.len() {
-//                 let action = agent.get_action(&state, stage_idx);
-//                 let (next_state, reward, is_done) = env.step(action);
-//                 state = next_state;
-//                 total_rewards += reward;
-//                 done = is_done;
-//             }
-//         }
-//     }
-//     total_rewards / episodes as f64
-// }
-//
-//
-// fn main() {
-//     let state_dim = 12;
-//     let action_dims = vec![16, 11, 3, 3, 2, 2, 2, 2, 2, 2, 2, 2];
-//     let replay_buffer_capacity = 1000;
-//     let mut agent = DQNAgent::new(&nn::VarStore::new(tch::Device::Cpu), state_dim, action_dims, replay_buffer_capacity);
-//     let mut env = FuzzEnv::new();
-//
-//     let train_episodes = 1000;
-//     let batch_size = 64;
-//     train(&mut agent, &mut env, train_episodes, batch_size);
-//
-//     let eval_episodes = 100;
-//     let avg_reward = evaluate(&agent, &mut env, eval_episodes);
-//     println!("Average reward over {} episodes: {}", eval_episodes, avg_reward);
-// }
+pub fn evaluate(&self, env: &mut FuzzEnv, episodes: usize) -> f64 {
+    let mut total_rewards = 0.0;
+    for _ in 0..episodes {
+        let mut state = env.reset();
+        let mut done = false;
+        while !done {
+            let action = self.get_action(&state);
+            let (next_state, reward, is_done) = env.step(action);
+            state = next_state;
+            total_rewards += reward as f64;
+            done = is_done;
+        }
+    }
+    //要不要修改该类型i64????
+    total_rewards / episodes as f64
+}
+}

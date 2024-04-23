@@ -96,3 +96,90 @@
 //5201201(0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16)
 //5201210(0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16)
 //5201211(0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16)
+
+
+
+
+// // let data = self.data.get_bytes().iter().map(|&b| b as f32).collect::<Vec<_>>();//get_bytes可能不合适
+// // let sstate_state = vec![self.sstate_state.get_hash() as f32];//hash()函数。。
+// let sstate_initialize = vec![if self.sstate_initialize { 1.0 } else { 0.0 }];
+// // let txn_value = vec![hash_to_u32(&self.txn_value.unwrap_or_default()) as f32];//hash()函数。。
+// let step = vec![if self.step { 1.0 } else { 0.0 }];
+// // let env = vec![env_to_u32(&self.env) as f32];
+// // let access_pattern = vec![self.access_pattern.lock().unwrap().to_u32() as f32];
+// let liquidation_percent = vec![self.liquidation_percent as f32];
+// // let mut direct_data = self.direct_data.iter().map(|&b| b as f32).collect::<Vec<_>>();
+// // let randomness = self.randomness.iter().map(|&b| b as f32).collect::<Vec<_>>();
+// let repeat = vec![self.repeat as f32];
+//
+// // let mut state_vec = vec![data, sstate_state, sstate_initialize, txn_value, step, env, access_pattern, liquidation_percent];
+// let mut state_vec = vec![sstate_initialize, step, liquidation_percent,repeat];
+// // state_vec.push(direct_data);
+// // state_vec.push(randomness);
+// // state_vec.push(repeat);
+//
+// let flat_state_vec: Vec<f32> = state_vec.into_iter().flatten().collect();
+// let state_tensor = Tensor::of_slice(&flat_state_vec);
+// state_tensor
+
+// pub fn env_to_u32(env: &Env) -> u32 {
+//     let mut result = 0;
+//
+//     // For CfgEnv
+//     result |= (env.cfg.chain_id.low_u32() as u32) << 0;
+//     result |= (env.cfg.spec_id as u32) << 1;
+//     if let Some(limit_contract_code_size) = env.cfg.limit_contract_code_size {
+//         result |= (limit_contract_code_size as u32) << 2;
+//     }
+//     result |= (env.cfg.memory_limit as u32) << 3;
+//
+//     // For BlockEnv
+//     result |= (env.block.number.low_u32() as u32) << 4;
+//     result |= (env.block.coinbase.low_u32() as u32) << 5;
+//     result |= (env.block.timestamp.low_u32() as u32) << 6;
+//     result |= (env.block.difficulty.low_u32() as u32) << 7;
+//     if let Some(prevrandao) = env.block.prevrandao {
+//         result |= (prevrandao.low_u32() as u32) << 8;
+//     }
+//     result |= (env.block.basefee.low_u32() as u32) << 9;
+//     result |= (env.block.gas_limit.low_u32() as u32) << 10;
+//
+//     // For TxEnv
+//     result |= (env.tx.caller.low_u32() as u32) << 11;
+//     result |= (env.tx.gas_limit as u32) << 12;
+//     result |= (env.tx.gas_price.low_u32() as u32) << 13;
+//     if let Some(gas_priority_fee) = env.tx.gas_priority_fee {
+//         result |= (gas_priority_fee.low_u32() as u32) << 14;
+//     }
+//     result |= (env.tx.value.low_u32() as u32) << 15;
+//     if let Some(chain_id) = env.tx.chain_id {
+//         result |= (chain_id as u32) << 16;
+//     }
+//     if let Some(nonce) = env.tx.nonce {
+//         result |= (nonce as u32) << 17;
+//     }
+//
+//     result
+// }
+// fn hash_to_u32(value: &Uint<256, 4>) -> u32 {
+//     let mut hasher = DefaultHasher::new();
+//     value.hash(&mut hasher);
+//     hasher.finish() as u32
+// }
+
+
+// fn main() {
+//     let state_dim = 12;
+//     let action_dims = vec![16, 11, 3, 3, 2, 2, 2, 2, 2, 2, 2, 2];
+//     let replay_buffer_capacity = 1000;
+//     let mut agent = DQNAgent::new(&nn::VarStore::new(tch::Device::Cpu), state_dim, action_dims, replay_buffer_capacity);
+//     let mut env = FuzzEnv::new();
+//
+//     let train_episodes = 1000;
+//     let batch_size = 64;
+//     train(&mut agent, &mut env, train_episodes, batch_size);
+//
+//     let eval_episodes = 100;
+//     let avg_reward = evaluate(&agent, &mut env, eval_episodes);
+//     println!("Average reward over {} episodes: {}", eval_episodes, avg_reward);
+// }

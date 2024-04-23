@@ -53,6 +53,7 @@ x,y,z：更新PTable的超参数
 8. 计算value并更新ptable
 
 ### todo
+##### **追踪github issue**
 1. 超参数最佳？p：随机的概率；A,B,C,D, E：价值计算公式的超参数；x,y,z：更新PTable的超参数还没有加到函数
 2. 能不能实现更多的变异算子。env_chain_id要不要加
 3. 测试环境是啥？提前部署需要用到的？
@@ -139,8 +140,29 @@ x,y,z：更新PTable的超参数
     `cosine_embedding_loss`: 余弦嵌入损失函数。
     `hinge_embedding_loss`: Hinge嵌入损失函数。
     `kl_div`: Kullback-Leibler散度损失函数。
-
 这些损失函数可以用于不同的机器学习任务，包括回归、分类、序列预测等。你可以根据你的任务需求选择合适的损失函数。
+5. 在`train`函数中：
+对于每个训练周期（episode）：
+    - 重置环境并获取初始状态
+    - 在环境结束之前，不断执行以下步骤：
+        - 对于每个动作维度，获取当前状态下的动作
+        - 执行动作并获取下一个状态、奖励和是否结束
+        - 将经验（当前状态、动作、奖励、下一个状态）存入回放缓冲区
+        - 更新当前状态为下一个状态
+        - 更新模型
+
+在`evaluate`函数中：
+对于每个评估周期（episode）：
+    - 重置环境并获取初始状态
+    - 在环境结束之前，不断执行以下步骤：
+        - 对于每个动作维度，获取当前状态下的动作
+        - 执行动作并获取下一个状态、奖励和是否结束
+        - 更新当前状态为下一个状态
+        - 累计奖励
+    - 计算平均奖励
+
+以下是根据这些步骤完成的`train`和`evaluate`函数：
+
 #### 已完成
 
 1. GLOBAL_INPUT线程安全问题
@@ -150,9 +172,10 @@ x,y,z：更新PTable的超参数
     access_pattern: Arc::new(Mutex::new(AccessPattern::new()))
 mutator。rs调用set GLOBAL_INPUT
 2. state 设计，暂定4个
-3. action编码  先实现全编码
+3. action编码  先实现全编码，后面再考虑如何剪枝/分层/只考虑主干啥的
+4. 缺失依赖问题，利用Dependency Walker 工具来分析生成的可执行文件（.exe 文件），
+                把libtorch的path放在LLVM前面
 #### todo
-
 1. env 的获取
    根据gobal_input依次获取state中的字段
 2. 开始训练使用，将输出的action对接到代码调用
@@ -163,30 +186,6 @@ mutator。rs调用set GLOBAL_INPUT
 
 
 ### ==================================================
-### 可能用到的代码：       
-
-// let data = self.data.get_bytes().iter().map(|&b| b as f32).collect::<Vec<_>>();//get_bytes可能不合适
-// let sstate_state = vec![self.sstate_state.get_hash() as f32];//hash()函数。。
-let sstate_initialize = vec![if self.sstate_initialize { 1.0 } else { 0.0 }];
-// let txn_value = vec![hash_to_u32(&self.txn_value.unwrap_or_default()) as f32];//hash()函数。。
-let step = vec![if self.step { 1.0 } else { 0.0 }];
-// let env = vec![env_to_u32(&self.env) as f32];
-// let access_pattern = vec![self.access_pattern.lock().unwrap().to_u32() as f32];
-let liquidation_percent = vec![self.liquidation_percent as f32];
-// let mut direct_data = self.direct_data.iter().map(|&b| b as f32).collect::<Vec<_>>();
-// let randomness = self.randomness.iter().map(|&b| b as f32).collect::<Vec<_>>();
-let repeat = vec![self.repeat as f32];
-
-        // let mut state_vec = vec![data, sstate_state, sstate_initialize, txn_value, step, env, access_pattern, liquidation_percent];
-        let mut state_vec = vec![sstate_initialize, step, liquidation_percent,repeat];
-        // state_vec.push(direct_data);
-        // state_vec.push(randomness);
-        // state_vec.push(repeat);
-
-        let flat_state_vec: Vec<f32> = state_vec.into_iter().flatten().collect();
-        let state_tensor = Tensor::of_slice(&flat_state_vec);
-        state_tensor
-
 
 ### 其他
 

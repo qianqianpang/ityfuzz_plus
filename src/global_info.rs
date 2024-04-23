@@ -10,7 +10,10 @@ pub static IS_INSTRUCTION_INTERESTING: AtomicI32 = AtomicI32::new(0);
 pub static VALUE: AtomicI32 = AtomicI32::new(0);
 
 
-
+lazy_static! {
+    pub static ref USE_MULTI_ARMED_BANDIT: Mutex<bool> = Mutex::new(true);
+    pub static ref USE_DQN: Mutex<bool> = Mutex::new(false);
+}
 
 //超参数
 pub static mut RANDOM_P: f64 = 0.5;
@@ -43,9 +46,41 @@ pub fn get_feedback_info() -> [bool; 4] {
 
 //ptable
 lazy_static! {
-    //这里的初始值，也可以随机初始化  为和=1的值
     pub static ref P_TABLE: Mutex<HashMap<&'static str, HashMap<&'static str, f64>>> = {
         let mut table = HashMap::new();
+
+        //选择mutate with template,state,data,bibao
+        let mut mutate_template_map = HashMap::new();
+        mutate_template_map.insert("USE_TEMPLATE", 0.2972036085374526);
+        mutate_template_map.insert("NOT_USE", 0.7027963914625475);
+        table.insert("MUTATE_TEMPLATE", mutate_template_map);
+
+        let mut mutate_state_map = HashMap::new();
+        mutate_state_map.insert("USE_STATE", 0.49718431275861);
+        mutate_state_map.insert("NOT_USE", 0.5028156872413899);
+        table.insert("MUTATE_STATE", mutate_state_map);
+
+        let mut mutate_data_map = HashMap::new();
+        mutate_data_map.insert("USE_DATA", 0.1656941526078328);
+        mutate_data_map.insert("NOT_USE", 0.8343058473921672);
+        table.insert("MUTATE_DATA", mutate_data_map);
+
+        let mut mutate_byte_map = HashMap::new();
+        mutate_byte_map.insert("MUTATE_LIQUIDATE", 0.23296299140488302);
+        mutate_byte_map.insert("MUTATE_NORMAL", 0.7670370085951169);
+        table.insert("MUTATE_BYTE", mutate_byte_map);
+
+         let mut mutate_borrow_map = HashMap::new();
+        mutate_borrow_map.insert("MUTATE_RANDOMNESS", 0.46078431249802076);
+        mutate_borrow_map.insert("MUTATE_NORMAL", 0.5392156875019793);
+        table.insert("MUTATE_BORROW", mutate_borrow_map);
+
+        let mut mutate_all_map = HashMap::new();
+        mutate_all_map.insert("MUTATE_LIQUIDATION", 0.1963891872557437);
+        mutate_all_map.insert("MUTATE_RANDOMNESSL", 0.4344037307380694);
+        mutate_all_map.insert("MUTATE_NORMAL", 0.36920708200618685);
+        table.insert("MUTATE_ALL", mutate_all_map);
+
 
          // 添选择变异env  or abi-args
         let mut input_mutate_map = HashMap::new();
@@ -129,38 +164,6 @@ lazy_static! {
         byte_mutations_expansion_map.insert("BytesInsertMutator", 1.0 / 20.0);
         byte_mutations_expansion_map.insert("BytesRandInsertMutator", 1.0 / 20.0);
         table.insert("BYTE_MUTATIONS_EXPANSION", byte_mutations_expansion_map);
-
-        //选择mutate with template,state,data,bibao
-        let mut mutate_template_map = HashMap::new();
-        mutate_template_map.insert("USE_TEMPLATE", 0.2972036085374526);
-        mutate_template_map.insert("NOT_USE", 0.7027963914625475);
-        table.insert("MUTATE_TEMPLATE", mutate_template_map);
-
-        let mut mutate_state_map = HashMap::new();
-        mutate_state_map.insert("USE_STATE", 0.49718431275861);
-        mutate_state_map.insert("NOT_USE", 0.5028156872413899);
-        table.insert("MUTATE_STATE", mutate_state_map);
-
-        let mut mutate_data_map = HashMap::new();
-        mutate_data_map.insert("USE_DATA", 0.1656941526078328);
-        mutate_data_map.insert("NOT_USE", 0.8343058473921672);
-        table.insert("MUTATE_DATA", mutate_data_map);
-
-        let mut mutate_byte_map = HashMap::new();
-        mutate_byte_map.insert("MUTATE_LIQUIDATE", 0.23296299140488302);
-        mutate_byte_map.insert("MUTATE_NORMAL", 0.7670370085951169);
-        table.insert("MUTATE_BYTE", mutate_byte_map);
-
-         let mut mutate_borrow_map = HashMap::new();
-        mutate_borrow_map.insert("MUTATE_RANDOMNESS", 0.46078431249802076);
-        mutate_borrow_map.insert("MUTATE_NORMAL", 0.5392156875019793);
-        table.insert("MUTATE_BORROW", mutate_borrow_map);
-
-        let mut mutate_all_map = HashMap::new();
-        mutate_all_map.insert("MUTATE_LIQUIDATION", 0.1963891872557437);
-        mutate_all_map.insert("MUTATE_RANDOMNESSL", 0.4344037307380694);
-        mutate_all_map.insert("MUTATE_NORMAL", 0.36920708200618685);
-        table.insert("MUTATE_ALL", mutate_all_map);
 
         Mutex::new(table)
     };

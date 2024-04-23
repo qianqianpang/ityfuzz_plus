@@ -3,18 +3,20 @@
 
 use core::{fmt::Debug, marker::PhantomData};
 use std::sync::atomic::Ordering;
-use crate::global_info::{adjust_p_table, calculate_value, print_feedback_info, print_mutation_op, print_p_table, print_value, reset_p_table};
+
 use libafl::{
     corpus::{Corpus, CorpusId},
+    Error,
     executors::{Executor, HasObservers},
     fuzzer::Evaluator,
     mutators::Mutator,
     prelude::Testcase,
     stages::{mutational::MutatedTransform, MutationalStage, Stage},
     state::{HasClientPerfMonitor, HasCorpus, HasMetadata, HasRand, UsesState},
-    Error,
 };
-use crate::global_info::{MUTATE_SUCCESS_COUNT};
+
+use crate::global_info::{adjust_p_table, USE_MULTI_ARMED_BANDIT,MUTATE_SUCCESS_COUNT};
+
 pub trait TestcaseScoreWithId<S>
     where
         S: HasMetadata + HasCorpus,
@@ -101,7 +103,10 @@ impl<E, F, EM, I, M, Z> Stage<E, EM, Z> for PowerMutationalStageWithId<E, F, EM,
         // print_value();
         // print_mutation_op();
         // print_p_table();
-        adjust_p_table();
+        let use_multi_armed_bandit = USE_MULTI_ARMED_BANDIT.lock().unwrap();
+        if *use_multi_armed_bandit {
+            adjust_p_table();
+        }
         // println!("===============================更新ptable之后=============================");
         // print_mutation_op();
         // print_p_table();
