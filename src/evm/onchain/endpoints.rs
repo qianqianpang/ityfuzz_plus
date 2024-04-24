@@ -10,7 +10,6 @@ use std::{
 };
 
 use bytes::Bytes;
-use itertools::Itertools;
 use reqwest::header::HeaderMap;
 use retry::{delay::Fixed, retry_with_index, OperationResult};
 use revm_interpreter::analysis::to_analysed;

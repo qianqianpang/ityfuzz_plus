@@ -175,9 +175,10 @@ mutator。rs调用set GLOBAL_INPUT
 3. action编码  先实现全编码，后面再考虑如何剪枝/分层/只考虑主干啥的
 4. 缺失依赖问题，利用Dependency Walker 工具来分析生成的可执行文件（.exe 文件），
                 把libtorch的path放在LLVM前面
+5. 利用MUTATOR_SELECTION进行选择变异
 #### todo
 1. env 的获取
-   根据gobal_input依次获取state中的字段
+   根据global_input依次获取state中的字段
 2. 开始训练使用，将输出的action对接到代码调用
 3. dqnnet网络结构调整
 

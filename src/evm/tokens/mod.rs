@@ -1,5 +1,4 @@
 use std::{
-    borrow::BorrowMut,
     cell::RefCell,
     collections::{hash_map, HashMap},
     fmt::Debug,
@@ -23,7 +22,6 @@ use crate::{
         types::{EVMAddress, EVMU256},
     },
     generic_vm::{
-        vm_executor::GenericVM,
         vm_state::{self, VMStateT},
     },
     input::ConciseSerde,

@@ -1,11 +1,9 @@
 use std::{
-    cell::RefCell,
     collections::{HashMap, HashSet},
     fs::File,
     io::Write,
     ops::Deref,
     path::Path,
-    rc::Rc,
     time::Duration,
 };
 use std::sync::{Arc, Mutex};
@@ -40,7 +38,6 @@ use crate::{
         middlewares::cheatcode::CHEATCODE_ADDRESS,
         mutator::AccessPattern,
         onchain::{abi_decompiler::fetch_abi_heimdall, flashloan::register_borrow_txn, BLACKLIST_ADDR},
-        presets::Preset,
         types::{
             fixed_address,
             EVMAddress,

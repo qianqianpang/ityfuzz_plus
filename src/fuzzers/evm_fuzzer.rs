@@ -69,7 +69,7 @@ use crate::{
     scheduler::SortedDroppingScheduler,
     state::{FuzzState, HasCaller, HasExecutionResult, HasPresets},
 };
-use crate::global_info::{print_p_table, reset_p_table,reset_p_table2};
+use crate::global_info::{reset_p_table, reset_p_table2};
 
 #[allow(clippy::type_complexity)]
 pub fn evm_fuzzer(

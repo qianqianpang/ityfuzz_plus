@@ -1,4 +1,4 @@
-use std::{cell::RefCell, collections::HashMap, fmt::Debug, ops::Deref, rc::Rc};
+use std::{collections::HashMap, fmt::Debug};
 use revm_primitives::U256;
 use bytes::Bytes;
 use colored::{ColoredString, Colorize};

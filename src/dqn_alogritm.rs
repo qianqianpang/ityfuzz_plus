@@ -1,12 +1,10 @@
 use std::collections::HashMap;
 use std::collections::VecDeque;
-use std::hash::Hash;
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex};
 use std::sync::atomic::Ordering;
 use std::vec::Vec;
 
 use bytes::Bytes;
-use itertools::Itertools;
 use lazy_static::lazy_static;
 use revm_primitives::Env;
 use tch::{Kind, nn, nn::Module, nn::Optimizer, nn::OptimizerConfig, Tensor};
@@ -63,7 +61,7 @@ lazy_static! {
         Mutex::new(m)
     };
 }
-pub fn parse_global_mutation() -> HashMap<&'static str, u8> {
+pub fn set_mutator_selection() -> HashMap<&'static str, u8> {
     let global_mutation = *GLOBAL_MUTATION.lock().unwrap();
     let global_mutation_string = global_mutation.to_string();
     let mutations: Vec<_>=global_mutation_string.chars().map(|c| c as u8).collect();
@@ -82,6 +80,10 @@ pub fn parse_global_mutation() -> HashMap<&'static str, u8> {
     mutator_selection.clone()
 }
 
+
+pub fn get_mutator_selection() -> HashMap<&'static str, u8> {
+    MUTATOR_SELECTION.lock().unwrap().clone()
+}
 //action设计========================================================================================
 lazy_static! {
     //最大值  520190016，可能要改为f32  f64??????

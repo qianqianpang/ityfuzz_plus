@@ -26,7 +26,6 @@ use libafl::{
         Mutator,
         QwordAddMutator,
         WordAddMutator,
-        StdScheduledMutator,
         WordInterestingMutator,
     },
     state::{HasMaxSize, HasRand, State},

@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 use libafl::mutators::{ComposedByMutations, MutationId, MutationResult, Mutator, MutatorsTuple, ScheduledMutator, StdScheduledMutator};
-use libafl::state::{HasCorpus, HasRand};
+use libafl::state::{ HasRand};
 use libafl::Error;
 
 
