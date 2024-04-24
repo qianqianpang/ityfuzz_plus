@@ -26,6 +26,8 @@ pub mod types;
 pub mod utils;
 pub mod vm;
 mod mutator_dqn;
+mod input_dqn;
+mod abi_dqn;
 
 use std::{
     cell::RefCell,

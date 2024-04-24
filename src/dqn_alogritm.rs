@@ -69,13 +69,12 @@ pub fn set_mutator_selection() -> HashMap<&'static str, u8> {
     let mut mutator_selection = MUTATOR_SELECTION.lock().unwrap();
     mutator_selection.insert("0_mutate_mode", mutations[0]);
     mutator_selection.insert("1_mutate_method", mutations[1]);
-    mutator_selection.insert("2_mutate_input", mutations[2]);
-    mutator_selection.insert("3_env_args", mutations[3]);
-    mutator_selection.insert("4_mutate_field", mutations[4]);
-    mutator_selection.insert("5_mutate_metho", mutations[5]);
-    mutator_selection.insert("6_byte_expansion", mutations[6]);
-    let detail_mutation_value = (mutations[7] as i64) * 10 + (mutations[8] as i64);
-    mutator_selection.insert("7_detail_mutation", detail_mutation_value as u8);
+    mutator_selection.insert("2_env_args", mutations[2]);
+    mutator_selection.insert("3_mutate_field", mutations[3]);
+    mutator_selection.insert("4_mutate_method", mutations[4]);
+    mutator_selection.insert("5_byte_expansion", mutations[5]);
+    let detail_mutation_value = (mutations[6] as i64) * 10 + (mutations[7] as i64);
+    mutator_selection.insert("6_detail_mutation", detail_mutation_value as u8);
 
     mutator_selection.clone()
 }
