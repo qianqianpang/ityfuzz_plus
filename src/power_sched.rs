@@ -103,10 +103,11 @@ impl<E, F, EM, I, M, Z> Stage<E, EM, Z> for PowerMutationalStageWithId<E, F, EM,
         // print_value();
         // print_mutation_op();
         // print_p_table();
-        let use_multi_armed_bandit = USE_MULTI_ARMED_BANDIT.lock().unwrap();
-        if *use_multi_armed_bandit {
-            adjust_p_table();
-        }
+        adjust_p_table();
+        // let use_multi_armed_bandit = USE_MULTI_ARMED_BANDIT.lock().unwrap();
+        // if *use_multi_armed_bandit {
+        //     adjust_p_table();
+        // }
         // println!("===============================更新ptable之后=============================");
         // print_mutation_op();
         // print_p_table();

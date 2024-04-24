@@ -181,7 +181,11 @@ mutator。rs调用set GLOBAL_INPUT
    根据global_input依次获取state中的字段
 2. 开始训练使用，将输出的action对接到代码调用
 3. dqnnet网络结构调整
-4. 不可达的  10 11？？？
+4. 不可达的  env 10 11？？？ 
+5. 先判断再决定是否调整ptable效果变差了？？  // let use_multi_armed_bandit = USE_MULTI_ARMED_BANDIT.lock().unwrap();
+// if *use_multi_armed_bandit {
+//     adjust_p_table();
+// }
 
 
 

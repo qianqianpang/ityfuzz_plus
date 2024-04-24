@@ -828,7 +828,7 @@ impl<VS, Loc, Addr, I, S, SC, CI> Mutator<I, S> for FuzzMutator<VS, Loc, Addr, S
                                 input.mutate(state)
                             }
                             _ => {
-                                unreachable!()
+                                MutationResult::Skipped
                             }
                         };
                         input.set_txn_value(EVMU256::ZERO);
@@ -850,7 +850,7 @@ impl<VS, Loc, Addr, I, S, SC, CI> Mutator<I, S> for FuzzMutator<VS, Loc, Addr, S
                                 input.mutate(state)
                             }
                             _ => {
-                                unreachable!()
+                                MutationResult::Skipped
                             }
                         };
                     } else {
@@ -878,12 +878,12 @@ impl<VS, Loc, Addr, I, S, SC, CI> Mutator<I, S> for FuzzMutator<VS, Loc, Addr, S
                             input.mutate(state)
                         }
                         _ => {
-                            unreachable!()
+                            MutationResult::Skipped
                         }
                     }
                 }
                 _ => {
-                    unreachable!()
+                    MutationResult::Skipped
                 }
             }
         };

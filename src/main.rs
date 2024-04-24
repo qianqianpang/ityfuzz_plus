@@ -30,6 +30,7 @@ mod global_info;
 mod sceduled_new;
 mod dqn_alogritm;
 mod drl;
+mod sceduled_new_dqn;
 
 use clap::{Parser, Subcommand};
 use evm::{evm_main, EvmArgs};
