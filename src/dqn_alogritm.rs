@@ -89,7 +89,7 @@ lazy_static! {
     static ref ACTIONS: Mutex<Vec<i64>> = Mutex::new(Vec::new());
 }
 fn encode_actions() -> Vec<i64> {
-    let nums = vec![0, 1, 10, 11, 20, 21, 30, 31, 40, 41, 50, 51, 52];
+    let nums = vec![101, 102, 201, 202, 301, 302, 41, 421, 422, 51, 521, 522,61,62,631,632];
     let mut actions = ACTIONS.lock().unwrap();
     for num in nums {
         actions.push(num);
@@ -158,7 +158,7 @@ impl FuzzEnv {
     }
     pub fn step(&mut self, action: i64) -> (Tensor, i64, bool) {
         //返回一个元组，包含一个Tensor（新的状态），一个i64（奖励）和一个bool（表示任务是否完成）
-        // Modify the state based on the action
+        // 执行动作——根据action 进行变异（改变state）
 
         let reward = get_value() as i64;
         let done = IS_OBJECTIVE.load(Ordering::SeqCst);
@@ -244,6 +244,7 @@ pub struct DQNAgent {
     model: DqnNet,
     replay_buffer: ReplayBuffer,
     optimizer: Optimizer,
+    actions: Vec<i64>,  // 新增字段
 }
 
 impl DQNAgent {
@@ -252,7 +253,9 @@ impl DQNAgent {
         let replay_buffer = ReplayBuffer::new(replay_buffer_capacity);
         let vs = nn::VarStore::new(tch::Device::Cpu);
         let optimizer = nn::Adam::default().build(&vs, 1e-3).unwrap();
-        DQNAgent { state_dim, action_dim, model, replay_buffer, optimizer }
+
+        let actions = encode_actions();
+        DQNAgent { state_dim, action_dim, model, replay_buffer, optimizer,actions }
     }
 
     pub fn update_model(&mut self, batch_size: usize) {
@@ -280,21 +283,29 @@ impl DQNAgent {
          // let curr_q_values = self.model.forward(&states).g((actions.unsqueeze(-1), )).squeeze1(-1);.
         // g((actions.unsqueeze(-1), )): 这是在获取执行特定动作的预期回报值。g方法返回输入张量（这里是神经网络的输出）在指定维度（这里是-1，表示动作的维度）上的元素。这里的actions.unsqueeze(-1)是指定索引。
         // .squeeze1(-1): 这是在移除张量中长度为1的维度。squeeze1方法将输入张量（这里是g方法的输出）在指定维度（这里是-1，表示最后一个维度）上的长度为1的维度移除。这通常用于移除不必要的维度，使得张量的形状更加简洁。
+        println!("State shape: {:?}", state.size());
+        println!("Action shape: {:?}", action.unsqueeze(-1).size());
+        println!("Action values: {:?}", action);
         let curr_q_value = self.model.forward(&state).gather(-1, &action.unsqueeze(-1), false).squeeze_dim(-1);//不知道对不对？？？？
         let next_q_value = self.model.forward(&next_state).max_dim(-1, false).0.detach();
         let expected_q_value = reward.to_kind(Kind::Float) + 0.99 * next_q_value;
 
         let loss = curr_q_value.mse_loss(&expected_q_value, tch::Reduction::Mean);
 
+        println!("loss-------------: {:?}", loss);
         self.optimizer.zero_grad();
         loss.backward();
         self.optimizer.step();
     }
 
     pub fn get_action(&self, state: &Tensor) -> i64 {
+        // 使用模型对输入的状态进行前向传播，得到Q值
         let q_value = self.model.forward(&state.unsqueeze(0));
-        // let action = q_value.argmax1(-1, false).item::<i64>();
-        let action = q_value.argmax(-1, false).int64_value(&[]);//argmax1(-1, false).item::<i64>();
+        // 使用argmax函数找到Q值中最大值的索引，这个索引就是最佳的动作
+        // -1表示在最后一个维度上找最大值的索引；false表示不保持维度，即降维
+        // let action = q_value.argmax(-1, false).int64_value(&[]);
+        let action_index = q_value.argmax(-1, false).int64_value(&[]);
+        let action = self.actions[action_index as usize];
         action
     }
 }
@@ -307,28 +318,55 @@ impl DQNAgent {
         while !done {
             let action = self.get_action(&state);
             let (next_state, reward, is_done) = env.step(action);
-            self.replay_buffer.push(state, action, reward, next_state.clone(&Default::default()));
+            self.replay_buffer.push(state, action, reward, next_state.clone(&next_state));
             state = next_state;
             self.update_model(batch_size);
+            println!("update model===========");
             done = is_done;
         }
+    }
+    }
+
+    pub fn evaluate(&self, env: &mut FuzzEnv, episodes: usize) -> f64 {
+        let mut total_rewards = 0.0;
+        for _ in 0..episodes {
+            let mut state = env.reset();
+            let mut done = false;
+            while !done {
+                let action = self.get_action(&state);
+                let (next_state, reward, is_done) = env.step(action);
+                state = next_state;
+                total_rewards += reward as f64;
+                done = is_done;
+            }
+        }
+        //要不要修改该类型i64????
+        total_rewards / episodes as f64
     }
 }
 
-pub fn evaluate(&self, env: &mut FuzzEnv, episodes: usize) -> f64 {
-    let mut total_rewards = 0.0;
-    for _ in 0..episodes {
-        let mut state = env.reset();
-        let mut done = false;
-        while !done {
-            let action = self.get_action(&state);
-            let (next_state, reward, is_done) = env.step(action);
-            state = next_state;
-            total_rewards += reward as f64;
-            done = is_done;
-        }
-    }
-    //要不要修改该类型i64????
-    total_rewards / episodes as f64
-}
-}
+
+//main函数=======================================================================================
+// fn main() {
+//
+//     //先定义state_dim，action_dim和replay_buffer_capacity
+//     let state_dim = 4;
+//     let action_dim = 16;
+//     let replay_buffer_capacity = 10000;
+//     let mut env = FuzzEnv::new();
+//     let vs = nn::VarStore::new(tch::Device::Cpu);
+//     let root = vs.root();
+//     let mut agent = DQNAgent::new(&root, state_dim, action_dim, replay_buffer_capacity);
+//
+//
+//     //定义episodes, batch_size
+//     let episodes = 100;
+//     let batch_size = 1;
+//     agent.train(&mut env, episodes, batch_size);
+//     let avg_reward = agent.evaluate(&mut env, episodes);
+//     println!("Average reward: {}", avg_reward);
+//
+//
+//     let state = env.reset();
+//     let action = agent.get_action(&state);
+// }

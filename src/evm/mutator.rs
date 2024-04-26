@@ -505,9 +505,9 @@ use crate::{
     input::{ConciseSerde, VMInputT},
     state::{HasCaller, HasItyState, HasPresets, InfantStateState},
 };
-use crate::dqn_alogritm::get_mutator_selection;
+use crate::dqn_alogritm::{get_mutator_selection, set_global_input};
 /// Mutator for EVM inputs
-use crate::evm::input::EVMInputT;
+use crate::evm::input::{EVMInput, EVMInputT};
 // use crate::dqn_alogritm::set_global_input;
 use crate::global_info::increment_mutation_op;
 
@@ -719,11 +719,13 @@ impl<VS, Loc, Addr, I, S, SC, CI> Mutator<I, S> for FuzzMutator<VS, Loc, Addr, S
         VS: Default + VMStateT + EVMStateT,
         Addr: PartialEq + Debug + Serialize + DeserializeOwned + Clone,
         Loc: Serialize + DeserializeOwned + Debug + Clone,
-        CI: Serialize + DeserializeOwned + Debug + Clone + ConciseSerde,
+        CI: Serialize + DeserializeOwned + Debug + Clone + ConciseSerde, EVMInput: From<I>
 {
     /// Mutate the input
     #[allow(unused_assignments)]
     fn mutate(&mut self, state: &mut S, input: &mut I, _stage_idx: i32) -> Result<MutationResult, Error> {
+
+        set_global_input(input.clone().into());
         if !input.get_staged_state().initialized {
             let concrete = state.get_infant_state(&mut self.infant_scheduler).unwrap();
             input.set_staged_state(concrete.1, concrete.0);

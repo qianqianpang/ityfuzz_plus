@@ -161,8 +161,6 @@ x,y,z：更新PTable的超参数
         - 累计奖励
     - 计算平均奖励
 
-以下是根据这些步骤完成的`train`和`evaluate`函数：
-
 #### 已完成
 
 1. GLOBAL_INPUT线程安全问题
@@ -171,18 +169,19 @@ x,y,z：更新PTable的超参数
     pub trait ABI: CloneABI + Send +Sync
     access_pattern: Arc::new(Mutex::new(AccessPattern::new()))
 mutator。rs调用set GLOBAL_INPUT
-2. state 设计，暂定4个
+2. state 设计，暂定input的4个字段
 3. action编码  先实现全编码，后面再考虑如何剪枝/分层/只考虑主干啥的
 4. 缺失依赖问题，利用Dependency Walker 工具来分析生成的可执行文件（.exe 文件），
                 把libtorch的path放在LLVM前面
-5. 利用MUTATOR_SELECTION进行选择变异,mutator_dqn.rs,input_dqn.rs(拷贝到原文件  注释之前的代码)
+5. 利用MUTATOR_SELECTION进行选择变异,mutator_dqn.rs,input_dqn.rs,abi_dqn.rs,scheduled_new_dqn.rs  (拷贝到原文件  并注释之前的代码)
+6. fuzzEnv 的实现
+   根据global_input依次获取state中的字段 
+7. 开始训练使用，将输出的action对接到代码调用
 #### todo
-1. env 的获取
-   根据global_input依次获取state中的字段
-2. 开始训练使用，将输出的action对接到代码调用
-3. dqnnet网络结构调整
-4. 不可达的  env 10 11？？？ 
-5. 先判断再决定是否调整ptable效果变差了？？  // let use_multi_armed_bandit = USE_MULTI_ARMED_BANDIT.lock().unwrap();
+训练过程没有执行mutate  执行等，，报错
+1. dqnnet网络结构调整
+2. 不可达的  env 10 11？？？ 
+3. 先判断再决定是否调整ptable效果变差了？？  // let use_multi_armed_bandit = USE_MULTI_ARMED_BANDIT.lock().unwrap();
 // if *use_multi_armed_bandit {
 //     adjust_p_table();
 // }
