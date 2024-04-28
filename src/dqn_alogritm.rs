@@ -43,9 +43,14 @@ pub fn set_global_input(new_input: EVMInput) {
     *GLOBAL_INPUT.lock().unwrap() = new_input;
 }
 
-
+//GLOBAL_MUTATION==========================================================================================================================
 lazy_static! {
     pub static ref GLOBAL_MUTATION: Mutex<i64> = Mutex::new(0);
+}
+
+pub fn set_global_mutation(value: i64) {
+    let mut global_mutation = GLOBAL_MUTATION.lock().unwrap();
+    *global_mutation = value;
 }
 lazy_static! {
     pub static ref MUTATOR_SELECTION: Mutex<HashMap<&'static str, u8>> = {
@@ -83,7 +88,7 @@ pub fn set_mutator_selection() -> HashMap<&'static str, u8> {
 pub fn get_mutator_selection() -> HashMap<&'static str, u8> {
     MUTATOR_SELECTION.lock().unwrap().clone()
 }
-//action设计========================================================================================
+//action设计======================================================================================================================
 lazy_static! {
     //最大值  520190016，可能要改为f32  f64??????
     static ref ACTIONS: Mutex<Vec<i64>> = Mutex::new(Vec::new());
@@ -99,7 +104,7 @@ fn encode_actions() -> Vec<i64> {
     }
     actions.clone()
 }
-//state的设计和方法==================================================================================
+//state的设计和方法================================================================================================================
 // 通常会将所有的输入数据转换为浮点数（通常是f32），因为神经网络的运算（如加法、乘法、激活函数等）都是在浮点数上进行的。
 // 状态通常是一个向量，表示环境的当前状态。在神经网络中，这通常是一个浮点数类型的张量（Tensor）。
 pub struct State {
@@ -133,7 +138,7 @@ impl State {
 }
 
 
-
+// FuzzEnv========================================================================================================
 pub struct FuzzEnv {
     state: EVMInput,
 }
@@ -160,6 +165,9 @@ impl FuzzEnv {
         //返回一个元组，包含一个Tensor（新的状态），一个i64（奖励）和一个bool（表示任务是否完成）
         // 执行动作——根据action 进行变异（改变state）
 
+        set_global_mutation(action);
+        set_mutator_selection();
+
         let reward = get_value() as i64;
         let done = IS_OBJECTIVE.load(Ordering::SeqCst);
 
@@ -173,7 +181,7 @@ impl FuzzEnv {
         (state.to_tensor(),reward,done)
     }
 }
-//ReplayBuffer存储经验元组（state, action, reward, next_state）==========================================
+//ReplayBuffer存储经验元组（state, action, reward, next_state）========================================================
 pub struct ReplayBuffer {
     buffer: VecDeque<(Tensor, i64, i64, Tensor)>,
     capacity: usize,
@@ -206,7 +214,7 @@ impl ReplayBuffer {
         self.buffer.len()
     }
 }
-//DQN===========================================================================================
+//DQN Net===============================================================================================================
 #[derive(Debug)]
 pub struct DqnNet {
     fc1: nn::Linear,
@@ -235,9 +243,7 @@ impl Module for DqnNet {
 }
 
 
-
-
-//DQNAgent==================================================================================
+//DQNAgent==========================================================================================================
 pub struct DQNAgent {
     state_dim: i64,
     action_dim: i64,
@@ -258,6 +264,39 @@ impl DQNAgent {
         DQNAgent { state_dim, action_dim, model, replay_buffer, optimizer,actions }
     }
 
+    pub fn train(&mut self, env: &mut FuzzEnv, episodes: usize, batch_size: usize) {
+        for _ in 0..episodes {
+            let mut state = env.reset();
+            let mut done = false;
+            while !done {
+                let action = self.get_action(&state);
+                //
+                let (next_state, reward, is_done) = env.step(action);
+                self.replay_buffer.push(state, action, reward, next_state.clone(&next_state));
+                state = next_state;
+                self.update_model(batch_size);
+                println!("update model===========");
+                done = is_done;
+            }
+        }
+    }
+
+    pub fn evaluate(&self, env: &mut FuzzEnv, episodes: usize) -> f64 {
+        let mut total_rewards = 0.0;
+        for _ in 0..episodes {
+            let mut state = env.reset();
+            let mut done = false;
+            while !done {
+                let action = self.get_action(&state);
+                let (next_state, reward, is_done) = env.step(action);
+                state = next_state;
+                total_rewards += reward as f64;
+                done = is_done;
+            }
+        }
+        //要不要修改该类型i64????
+        total_rewards / episodes as f64
+    }
     pub fn update_model(&mut self, batch_size: usize) {
         if self.replay_buffer.len() < batch_size {
             return;
@@ -307,41 +346,6 @@ impl DQNAgent {
         let action_index = q_value.argmax(-1, false).int64_value(&[]);
         let action = self.actions[action_index as usize];
         action
-    }
-}
-
-impl DQNAgent {
-    pub fn train(&mut self, env: &mut FuzzEnv, episodes: usize, batch_size: usize) {
-    for _ in 0..episodes {
-        let mut state = env.reset();
-        let mut done = false;
-        while !done {
-            let action = self.get_action(&state);
-            let (next_state, reward, is_done) = env.step(action);
-            self.replay_buffer.push(state, action, reward, next_state.clone(&next_state));
-            state = next_state;
-            self.update_model(batch_size);
-            println!("update model===========");
-            done = is_done;
-        }
-    }
-    }
-
-    pub fn evaluate(&self, env: &mut FuzzEnv, episodes: usize) -> f64 {
-        let mut total_rewards = 0.0;
-        for _ in 0..episodes {
-            let mut state = env.reset();
-            let mut done = false;
-            while !done {
-                let action = self.get_action(&state);
-                let (next_state, reward, is_done) = env.step(action);
-                state = next_state;
-                total_rewards += reward as f64;
-                done = is_done;
-            }
-        }
-        //要不要修改该类型i64????
-        total_rewards / episodes as f64
     }
 }
 

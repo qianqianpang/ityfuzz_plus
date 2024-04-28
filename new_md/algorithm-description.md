@@ -178,7 +178,13 @@ mutator。rs调用set GLOBAL_INPUT
    根据global_input依次获取state中的字段 
 7. 开始训练使用，将输出的action对接到代码调用
 #### todo
-训练过程没有执行mutate  执行等，，报错
+训练过程没有执行mutate  
+报错
+
+在step函数执行一次mutate  perform 
+如果训练好了，可以向adjust_table那样直接调用step函数
+
+fuzz流程和train过程同时进行，利用channel发送端和接收端控制perform和train的执行（监听信号）
 1. dqnnet网络结构调整
 2. 不可达的  env 10 11？？？ 
 3. 先判断再决定是否调整ptable效果变差了？？  // let use_multi_armed_bandit = USE_MULTI_ARMED_BANDIT.lock().unwrap();

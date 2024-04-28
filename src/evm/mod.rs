@@ -54,6 +54,7 @@ use oracles::{erc20::IERC20OracleFlashloan, v2_pair::PairBalanceOracle};
 use producers::erc20::ERC20Producer;
 use serde::Deserialize;
 use serde_json::json;
+use tch::nn;
 use types::{EVMAddress, EVMFuzzState, EVMU256};
 use vm::EVMState;
 
@@ -63,6 +64,7 @@ use crate::{
     oracle::{Oracle, Producer},
     state::FuzzState,
 };
+use crate::dqn_alogritm::{DQNAgent, FuzzEnv};
 
 pub fn parse_constructor_args_string(input: String) -> HashMap<String, Vec<String>> {
     let mut map = HashMap::new();
@@ -777,5 +779,23 @@ pub fn evm_main(mut args: EvmArgs) {
     let abis_json = format!("{}/abis.json", args.work_dir.clone().as_str());
 
     utils::try_write_file(&abis_json, &json_str, true).unwrap();
+
+    // //dqn算法斯调用
+    // //先定义state_dim，action_dim和replay_buffer_capacity
+    // let state_dim = 4;
+    // let action_dim = 16;
+    // let replay_buffer_capacity = 10000;
+    // let mut env = FuzzEnv::new();
+    // let vs = nn::VarStore::new(tch::Device::Cpu);
+    // let root = vs.root();
+    // let mut agent = DQNAgent::new(&root, state_dim, action_dim, replay_buffer_capacity);
+    //
+    //
+    // //定义episodes, batch_size
+    // let episodes = 100;
+    // let batch_size = 1;
+    // agent.train(&mut env, episodes, batch_size);
+    // let avg_reward = agent.evaluate(&mut env, episodes);
+    // println!("Average reward: {}", avg_reward);
     evm_fuzzer(config, &mut state)
 }

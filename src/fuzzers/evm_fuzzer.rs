@@ -91,25 +91,6 @@ pub fn evm_fuzzer(
     state: &mut EVMFuzzState,
 ) {
     info!("\n\n ================ EVM Fuzzer Start ===================\n\n");
-    //dqn算法斯调用
-    //先定义state_dim，action_dim和replay_buffer_capacity
-    let state_dim = 4;
-    let action_dim = 16;
-    let replay_buffer_capacity = 10000;
-    let mut env = FuzzEnv::new();
-    let vs = nn::VarStore::new(tch::Device::Cpu);
-    let root = vs.root();
-    let mut agent = DQNAgent::new(&root, state_dim, action_dim, replay_buffer_capacity);
-
-
-    //定义episodes, batch_size
-    let episodes = 100;
-    let batch_size = 1;
-    agent.train(&mut env, episodes, batch_size);
-    let avg_reward = agent.evaluate(&mut env, episodes);
-    println!("Average reward: {}", avg_reward);
-
-
     reset_p_table();
     // reset_p_table2();
     // print_p_table();
