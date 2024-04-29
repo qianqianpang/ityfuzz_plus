@@ -814,5 +814,7 @@ pub fn evm_main(mut args: EvmArgs) {
     // agent.train(&mut env, episodes, batch_size);
     // let avg_reward = agent.evaluate(&mut env, episodes);
     // println!("Average reward: {}", avg_reward);
+    //
     evm_fuzzer(config, &mut state)
+
 }
