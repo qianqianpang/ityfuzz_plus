@@ -14,8 +14,8 @@ use libafl::{
     stages::{mutational::MutatedTransform, MutationalStage, Stage},
     state::{HasClientPerfMonitor, HasCorpus, HasMetadata, HasRand, UsesState},
 };
-
-use crate::global_info::{adjust_p_table, USE_MULTI_ARMED_BANDIT,MUTATE_SUCCESS_COUNT};
+// use crate::evm::{AGENT, ENV, EPISODES, BATCH_SIZE};
+use crate::global_info::{adjust_p_table, calculate_value, MUTATE_SUCCESS_COUNT};
 
 pub trait TestcaseScoreWithId<S>
     where
@@ -97,20 +97,18 @@ impl<E, F, EM, I, M, Z> Stage<E, EM, Z> for PowerMutationalStageWithId<E, F, EM,
         MUTATE_SUCCESS_COUNT.fetch_add(1, Ordering::SeqCst);
         println!("===============================================================执行mutate stage perform======================================================================");
         let ret = self.perform_mutational(fuzzer, executor, state, manager, corpus_idx);
-        // print_feedback_info();
-        // calculate_value();
-        // println!("===============================更新ptable之前=============================");
-        // print_value();
-        // print_mutation_op();
-        // print_p_table();
+
+        // //dqn  train
+        // let mut env = ENV.lock().unwrap();
+        // let episodes = *EPISODES.lock().unwrap();
+        // let batch_size = *BATCH_SIZE.lock().unwrap();
+        // let agent = AGENT.lock().unwrap();
+        //
+        // agent.train(&mut *env, episodes, batch_size);
+        // let avg_reward = agent.evaluate(&mut *env, episodes);
+        // println!("Average reward: {}", avg_reward);
+        calculate_value();
         adjust_p_table();
-        // let use_multi_armed_bandit = USE_MULTI_ARMED_BANDIT.lock().unwrap();
-        // if *use_multi_armed_bandit {
-        //     adjust_p_table();
-        // }
-        // println!("===============================更新ptable之后=============================");
-        // print_mutation_op();
-        // print_p_table();
         ret
     }
 }

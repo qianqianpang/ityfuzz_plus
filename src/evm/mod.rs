@@ -54,7 +54,7 @@ use oracles::{erc20::IERC20OracleFlashloan, v2_pair::PairBalanceOracle};
 use producers::erc20::ERC20Producer;
 use serde::Deserialize;
 use serde_json::json;
-use tch::nn;
+use tch::{Device, nn};
 use types::{EVMAddress, EVMFuzzState, EVMU256};
 use vm::EVMState;
 
@@ -64,7 +64,7 @@ use crate::{
     oracle::{Oracle, Producer},
     state::FuzzState,
 };
-use crate::dqn_alogritm::{DQNAgent, FuzzEnv};
+// use crate::dqn_alogritm::{DQNAgent, FuzzEnv};
 
 pub fn parse_constructor_args_string(input: String) -> HashMap<String, Vec<String>> {
     let mut map = HashMap::new();
@@ -408,6 +408,23 @@ impl OracleType {
     }
 }
 
+
+// use lazy_static::lazy_static;
+// use std::sync::Mutex;
+// use tch::nn::VarStore;
+//
+// lazy_static! {
+//     static ref STATE_DIM: Mutex<i32> = Mutex::new(4);
+//     static ref ACTION_DIM: Mutex<i32> = Mutex::new(16);
+//     static ref REPLAY_BUFFER_CAPACITY: Mutex<i32> = Mutex::new(10000);
+//     static ref EPISODES: Mutex<i32> = Mutex::new(100);
+//     static ref BATCH_SIZE: Mutex<i32> = Mutex::new(1);
+//
+//     static ref ENV: FuzzEnv = FuzzEnv::new();
+//     static ref VS: VarStore = VarStore::new(Device::Cpu);
+//     static ref ROOT: nn::Path = VS.root();
+//     static ref AGENT: DQNAgent = DQNAgent::new(&*ROOT, *STATE_DIM.lock().unwrap(), *ACTION_DIM.lock().unwrap(), *REPLAY_BUFFER_CAPACITY.lock().unwrap());
+// }
 #[allow(clippy::type_complexity)]
 pub fn evm_main(mut args: EvmArgs) {
     args.setup_file = args.deployment_script;
