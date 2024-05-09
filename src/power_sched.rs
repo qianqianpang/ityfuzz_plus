@@ -1,6 +1,5 @@
 //! The power schedules. This stage should be invoked after the calibration
 //! stage.
-
 use core::{fmt::Debug, marker::PhantomData};
 use std::sync::atomic::Ordering;
 
@@ -14,8 +13,12 @@ use libafl::{
     stages::{mutational::MutatedTransform, MutationalStage, Stage},
     state::{HasClientPerfMonitor, HasCorpus, HasMetadata, HasRand, UsesState},
 };
+use plotters::prelude::*;
+use libafl_bolts::ErrorBacktrace;
+
+use crate::evm::LOSS_VALUES;
 // use crate::evm::{AGENT, ENV, EPISODES, BATCH_SIZE};
-use crate::global_info::{adjust_p_table, calculate_value, MUTATE_SUCCESS_COUNT};
+use crate::global_info::MUTATE_SUCCESS_COUNT;
 
 pub trait TestcaseScoreWithId<S>
     where
@@ -94,25 +97,73 @@ impl<E, F, EM, I, M, Z> Stage<E, EM, Z> for PowerMutationalStageWithId<E, F, EM,
         corpus_idx: CorpusId,
     ) -> Result<(), Error> {
         // 在即将变异的地方增加计数
+
         MUTATE_SUCCESS_COUNT.fetch_add(1, Ordering::SeqCst);
         println!("===============================================================执行mutate stage perform======================================================================");
+
+        //dqn_1
+        let mut env = crate::evm::ENV.lock().unwrap();
+        let episodes = *crate::evm::EPISODES.lock().unwrap();
+        let batch_size = *crate::evm::BATCH_SIZE.lock().unwrap();
+        let mut agent = crate::evm::AGENT.lock().unwrap();
+        let mut state_tensor = env.reset();
+        let epsilon = 0.8;
+        let (action,action_index) = agent.get_action(&state_tensor, epsilon);
+        env.step_1(action);
+
+        //执行变异
         let ret = self.perform_mutational(fuzzer, executor, state, manager, corpus_idx);
 
-        // //dqn  train
-        // let mut env = ENV.lock().unwrap();
-        // let episodes = *EPISODES.lock().unwrap();
-        // let batch_size = *BATCH_SIZE.lock().unwrap();
-        // let agent = AGENT.lock().unwrap();
-        //
-        // agent.train(&mut *env, episodes, batch_size);
-        // let avg_reward = agent.evaluate(&mut *env, episodes);
+        //dqn_评估
+        let (next_state, reward) = env.step_2();
+        agent.replay_buffer.push(state_tensor, action_index, reward, next_state.clone(&next_state));
+        state_tensor=next_state;
+        agent.update_model(batch_size as usize);
+        println!("update model===========");
+        if MUTATE_SUCCESS_COUNT.load(Ordering::SeqCst) > episodes as usize {
+            // Save the model
+            agent.model.save("./test_model").unwrap();
+            let loss_values = LOSS_VALUES.lock().unwrap();
+
+            match plot_loss_values(&loss_values) {
+                Ok(_) => (),
+                Err(e) => return Err(libafl::Error::Unknown(format!("{}", e), ErrorBacktrace::new())),
+            }
+            std::process::exit(0);
+        }
+        // let avg_reward = agent.evaluate(&mut *env, episodes.try_into().unwrap());
         // println!("Average reward: {}", avg_reward);
-        calculate_value();
-        adjust_p_table();
+
+        // calculate_value();
+        // adjust_p_table();
         ret
     }
 }
 
+
+fn plot_loss_values(loss_values: &[f32]) -> Result<(), Box<dyn std::error::Error>> {
+    let root = BitMapBackend::new("loss_values.png", (640, 480)).into_drawing_area();
+    root.fill(&WHITE)?;
+
+    let max_loss_value = loss_values.iter().fold(f32::MIN, |a, &b| a.max(b));
+
+    let mut chart = ChartBuilder::on(&root)
+        .caption("Loss Values", ("sans-serif", 50).into_font())
+        .margin(5)
+        .x_label_area_size(30)
+        .y_label_area_size(30)
+        .build_ranged(0f32..loss_values.len() as f32, 0f32..max_loss_value)?;
+
+    chart.configure_mesh().draw()?;
+
+    chart.draw_series(LineSeries::new(
+        loss_values.iter().enumerate().map(|(x, y)| (x as f32, *y)),
+        &RED,
+    ))?;
+
+    root.present()?;
+    Ok(())
+}
 impl<E, F, EM, M, Z> PowerMutationalStageWithId<E, F, EM, E::Input, M, Z>
     where
         E: Executor<EM, Z> + HasObservers,

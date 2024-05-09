@@ -409,22 +409,27 @@ impl OracleType {
 }
 
 
-// use lazy_static::lazy_static;
-// use std::sync::Mutex;
-// use tch::nn::VarStore;
-//
-// lazy_static! {
-//     static ref STATE_DIM: Mutex<i32> = Mutex::new(4);
-//     static ref ACTION_DIM: Mutex<i32> = Mutex::new(16);
-//     static ref REPLAY_BUFFER_CAPACITY: Mutex<i32> = Mutex::new(10000);
-//     static ref EPISODES: Mutex<i32> = Mutex::new(100);
-//     static ref BATCH_SIZE: Mutex<i32> = Mutex::new(1);
-//
-//     static ref ENV: FuzzEnv = FuzzEnv::new();
-//     static ref VS: VarStore = VarStore::new(Device::Cpu);
-//     static ref ROOT: nn::Path = VS.root();
-//     static ref AGENT: DQNAgent = DQNAgent::new(&*ROOT, *STATE_DIM.lock().unwrap(), *ACTION_DIM.lock().unwrap(), *REPLAY_BUFFER_CAPACITY.lock().unwrap());
-// }
+use lazy_static::lazy_static;
+use tch::nn::VarStore;
+use crate::dqn_alogritm::{DQNAgent, FuzzEnv};
+
+use std::sync::{Arc, Mutex};
+// 这些应该只初始化一次而不是每次perform都调用
+lazy_static! {
+    pub static ref STATE_DIM: Mutex<i32> = Mutex::new(4);
+    pub static ref ACTION_DIM: Mutex<i32> = Mutex::new(2500);
+    pub static ref REPLAY_BUFFER_CAPACITY: Mutex<i32> = Mutex::new(10000);
+    pub static ref EPISODES: Mutex<i32> = Mutex::new(100000);
+    pub static ref BATCH_SIZE: Mutex<i32> = Mutex::new(1);
+
+    pub static ref ENV: Mutex<FuzzEnv> = Mutex::new(FuzzEnv::new());
+    pub static ref VS: VarStore = VarStore::new(Device::Cpu);
+    pub static ref ROOT: nn::Path<'static> = VS.root().clone();
+    pub static ref AGENT: Arc<Mutex<DQNAgent>> = Arc::new(Mutex::new(DQNAgent::new(&*VS, (*STATE_DIM.lock().unwrap()).into(), (*ACTION_DIM.lock().unwrap()).into(), (*REPLAY_BUFFER_CAPACITY.lock().unwrap()).try_into().unwrap())));
+
+    pub static ref LOSS_VALUES: Mutex<Vec<f32>> = Mutex::new(Vec::new());
+
+}
 #[allow(clippy::type_complexity)]
 pub fn evm_main(mut args: EvmArgs) {
     args.setup_file = args.deployment_script;
