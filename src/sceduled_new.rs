@@ -163,6 +163,7 @@ impl<I, MT, S> ScheduledMutator<I, MT, S> for StdScheduledMutatorQQ<I, MT, S>
         // println!("我重写的2");
         debug_assert!(!self.mutations().is_empty());
         let mutator_selection = get_mutator_selection();
+        // println!(",,,,,{:?}", mutator_selection);
         let byte_expansion=mutator_selection["5_byte_expansion"];
         let detail_mutation=mutator_selection["6_detail_mutation"];
         if detail_mutation ==1{

@@ -570,6 +570,8 @@ for ItyFuzzer<VS, Loc, Addr, Out, CS, IS, F, IF, IFR, I, OF, S, OT, CI, SM>
                 // 获取当前的变异次数
                 let success_count = MUTATE_SUCCESS_COUNT.load(Ordering::SeqCst);
                 println!("变异了{}次",success_count);
+
+
                 print_p_table();
                 let cur_report =
                     format!(

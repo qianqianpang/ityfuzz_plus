@@ -724,7 +724,6 @@ impl<VS, Loc, Addr, I, S, SC, CI> Mutator<I, S> for FuzzMutator<VS, Loc, Addr, S
     /// Mutate the input
     #[allow(unused_assignments)]
     fn mutate(&mut self, state: &mut S, input: &mut I, _stage_idx: i32) -> Result<MutationResult, Error> {
-
         set_global_input(input.clone().into());
         if !input.get_staged_state().initialized {
             let concrete = state.get_infant_state(&mut self.infant_scheduler).unwrap();
@@ -813,7 +812,7 @@ impl<VS, Loc, Addr, I, S, SC, CI> Mutator<I, S> for FuzzMutator<VS, Loc, Addr, S
                     //MUTATE_BYTE
                     if input.is_step() {
                         let res = match mutator_selection.get("1_mutate_method") {
-                            Some(&0) => {
+                            Some(&1) => {
                                 if unsafe { CAN_LIQUIDATE } {
                                     let prev_percent = input.get_liquidation_percent();
                                     input.set_liquidation_percent(if state.rand_mut().below(100) < 80 { 10 } else { 0 } as u8);
@@ -826,7 +825,7 @@ impl<VS, Loc, Addr, I, S, SC, CI> Mutator<I, S> for FuzzMutator<VS, Loc, Addr, S
                                     MutationResult::Skipped
                                 }
                             }
-                            Some(&1) => {
+                            Some(&2) => {
                                 input.mutate(state)
                             }
                             _ => {
@@ -844,11 +843,11 @@ impl<VS, Loc, Addr, I, S, SC, CI> Mutator<I, S> for FuzzMutator<VS, Loc, Addr, S
                     if input.get_input_type() == Borrow {
                         let rand_u8 = state.rand_mut().below(255) as u8;
                         return match mutator_selection.get("1_mutate_method") {
-                            Some(&0) => {
+                            Some(&1) => {
                                 input.set_randomness(vec![rand_u8; 1]);
                                 MutationResult::Mutated
                             }
-                            Some(&1) => {
+                            Some(&2) => {
                                 input.mutate(state)
                             }
                             _ => {
@@ -862,7 +861,7 @@ impl<VS, Loc, Addr, I, S, SC, CI> Mutator<I, S> for FuzzMutator<VS, Loc, Addr, S
                 Some(&6) => {
                     //MUTATE_ALL
                     match mutator_selection.get("1_mutate_method") {
-                        Some(&0) => {
+                        Some(&1) => {
                             let prev_percent = input.get_liquidation_percent();
                             input.set_liquidation_percent(if state.rand_mut().below(100) < 80 { 10 } else { 0 } as u8);
                             if prev_percent != input.get_liquidation_percent() {
@@ -871,12 +870,12 @@ impl<VS, Loc, Addr, I, S, SC, CI> Mutator<I, S> for FuzzMutator<VS, Loc, Addr, S
                                 MutationResult::Skipped
                             }
                         }
-                        Some(&1) => {
+                        Some(&2) => {
                             let rand_u8 = state.rand_mut().below(255) as u8;
                             input.set_randomness(vec![rand_u8; 1]);
                             MutationResult::Mutated
                         }
-                        Some(&2) => {
+                        Some(&3) => {
                             input.mutate(state)
                         }
                         _ => {
@@ -895,7 +894,7 @@ impl<VS, Loc, Addr, I, S, SC, CI> Mutator<I, S> for FuzzMutator<VS, Loc, Addr, S
 
         // try to mutate the input for [`havoc_times`] times with 20 retries if
         // the input is not mutated
-        while res != MutationResult::Mutated && tries < 20 {
+        while res != MutationResult::Mutated && tries < 10 {
             for _ in 0..havoc_times {
                 if mutator() == MutationResult::Mutated {
                     res = MutationResult::Mutated;

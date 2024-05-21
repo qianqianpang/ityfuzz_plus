@@ -211,10 +211,21 @@ mutator。rs调用set GLOBAL_INPUT
     2）修改学习率
     3）修改DQNNet结构使其复杂些（貌似更有用些？？
 11. 全集action
-12. 画loss变化图
+12. 画loss变化图,调整loss计算，batchsize=128
+13. 实现dqnnet 的save方法保存model
+14. 修改set函数 之前的有问题
+15. 修改全集编码  之前有错误
+16. mutator.rs修改该20为10：while res != MutationResult::Mutated && tries < 10
+
+
+
 #### todo
-实现dqnnet 的sav方法保存model 
+在下一次训练时加载保存的model,实现dqnnet 的load方法,,,找到bug
++其他字段 ????  保证这些字段有效？？都是0
+在调整NET结构，使其更复杂，更有用
+其他一切调优技巧???
 如果训练好了，可以向adjust_table那样直接调用step函数
+action维度应该是2452  实际上是2387???
 git有问题，现在没有官方仓库的git信息
 1. 不可达的  env 10 11？？？ 
 2. 先判断再决定是否调整ptable效果变差了？？  // let use_multi_armed_bandit = USE_MULTI_ARMED_BANDIT.lock().unwrap();

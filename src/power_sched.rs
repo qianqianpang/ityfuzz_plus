@@ -2,6 +2,8 @@
 //! stage.
 use core::{fmt::Debug, marker::PhantomData};
 use std::sync::atomic::Ordering;
+use std::sync::Mutex;
+use lazy_static::lazy_static;
 
 use libafl::{
     corpus::{Corpus, CorpusId},
@@ -15,6 +17,7 @@ use libafl::{
 };
 use plotters::prelude::*;
 use libafl_bolts::ErrorBacktrace;
+use crate::dqn_alogritm::DQNAgent;
 
 use crate::evm::LOSS_VALUES;
 // use crate::evm::{AGENT, ENV, EPISODES, BATCH_SIZE};
@@ -75,6 +78,10 @@ impl<E, F, EM, I, M, Z> MutationalStage<E, EM, I, M, Z> for PowerMutationalStage
         Ok(score)
     }
 }
+lazy_static! {
+    static ref VAR_STORE: Mutex<tch::nn::VarStore> = Mutex::new(tch::nn::VarStore::new(tch::Device::Cpu));
+}
+
 
 impl<E, F, EM, I, M, Z> Stage<E, EM, Z> for PowerMutationalStageWithId<E, F, EM, I, M, Z>
     where
@@ -106,6 +113,10 @@ impl<E, F, EM, I, M, Z> Stage<E, EM, Z> for PowerMutationalStageWithId<E, F, EM,
         let episodes = *crate::evm::EPISODES.lock().unwrap();
         let batch_size = *crate::evm::BATCH_SIZE.lock().unwrap();
         let mut agent = crate::evm::AGENT.lock().unwrap();
+        // let mut var_store = VAR_STORE.lock().unwrap();
+        // var_store.load("./test_model").unwrap();
+        // let mut agent = DQNAgent::new_from_model(&mut var_store, "./test_model", *crate::evm::STATE_DIM.lock().unwrap() as i64, *crate::evm::ACTION_DIM.lock().unwrap() as i64, *crate::evm::REPLAY_BUFFER_CAPACITY.lock().unwrap() as usize).unwrap();
+
         let mut state_tensor = env.reset();
         let epsilon = 0.8;
         let (action,action_index) = agent.get_action(&state_tensor, epsilon);
@@ -127,7 +138,7 @@ impl<E, F, EM, I, M, Z> Stage<E, EM, Z> for PowerMutationalStageWithId<E, F, EM,
 
             match plot_loss_values(&loss_values) {
                 Ok(_) => (),
-                Err(e) => return Err(libafl::Error::Unknown(format!("{}", e), ErrorBacktrace::new())),
+                Err(e) => return Err(Error::Unknown(format!("{}", e), ErrorBacktrace::new())),
             }
             std::process::exit(0);
         }
@@ -139,10 +150,8 @@ impl<E, F, EM, I, M, Z> Stage<E, EM, Z> for PowerMutationalStageWithId<E, F, EM,
         ret
     }
 }
-
-
-fn plot_loss_values(loss_values: &[f32]) -> Result<(), Box<dyn std::error::Error>> {
-    let root = BitMapBackend::new("loss_values.png", (640, 480)).into_drawing_area();
+pub fn plot_loss_values(loss_values: &[f32]) -> Result<(), Box<dyn std::error::Error>> {
+    let root = BitMapBackend::new("res/loss/new.png", (640, 480)).into_drawing_area();
     root.fill(&WHITE)?;
 
     let max_loss_value = loss_values.iter().fold(f32::MIN, |a, &b| a.max(b));
@@ -152,7 +161,7 @@ fn plot_loss_values(loss_values: &[f32]) -> Result<(), Box<dyn std::error::Error
         .margin(5)
         .x_label_area_size(30)
         .y_label_area_size(30)
-        .build_ranged(0f32..loss_values.len() as f32, 0f32..max_loss_value)?;
+        .build_ranged(0f32..(loss_values.len() * 2) as f32, 0f32..max_loss_value)?;
 
     chart.configure_mesh().draw()?;
 
@@ -164,6 +173,30 @@ fn plot_loss_values(loss_values: &[f32]) -> Result<(), Box<dyn std::error::Error
     root.present()?;
     Ok(())
 }
+
+// pub fn plot_loss_values(loss_values: &[f32]) -> Result<(), Box<dyn std::error::Error>> {
+//     let root = BitMapBackend::new("res/loss/new2.png", (640, 480)).into_drawing_area();
+//     root.fill(&WHITE)?;
+//
+//     let max_loss_value = loss_values.iter().fold(f32::MIN, |a, &b| a.max(b));
+//
+//     let mut chart = ChartBuilder::on(&root)
+//         .caption("Loss Values", ("sans-serif", 50).into_font())
+//         .margin(5)
+//         .x_label_area_size(30)
+//         .y_label_area_size(30)
+//         .build_ranged(0f32..loss_values.len() as f32, 0f32..max_loss_value)?;
+//
+//     chart.configure_mesh().draw()?;
+//
+//     chart.draw_series(LineSeries::new(
+//         loss_values.iter().enumerate().map(|(x, y)| (x as f32, *y)),
+//         &RED,
+//     ))?;
+//
+//     root.present()?;
+//     Ok(())
+// }
 impl<E, F, EM, M, Z> PowerMutationalStageWithId<E, F, EM, E::Input, M, Z>
     where
         E: Executor<EM, Z> + HasObservers,

@@ -410,26 +410,56 @@ impl OracleType {
 
 
 use lazy_static::lazy_static;
-use tch::nn::VarStore;
-use crate::dqn_alogritm::{DQNAgent, FuzzEnv};
-
+use tch::nn::{OptimizerConfig, VarStore};
+use crate::dqn_alogritm::{DQNAgent, DqnNet, encode_actions, FuzzEnv, ReplayBuffer};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 // 这些应该只初始化一次而不是每次perform都调用
+
 lazy_static! {
     pub static ref STATE_DIM: Mutex<i32> = Mutex::new(4);
     pub static ref ACTION_DIM: Mutex<i32> = Mutex::new(2500);
     pub static ref REPLAY_BUFFER_CAPACITY: Mutex<i32> = Mutex::new(10000);
-    pub static ref EPISODES: Mutex<i32> = Mutex::new(100000);
-    pub static ref BATCH_SIZE: Mutex<i32> = Mutex::new(1);
+    pub static ref EPISODES: Mutex<i64> = Mutex::new(10000000000);
+    pub static ref BATCH_SIZE: Mutex<i32> = Mutex::new(128);
 
     pub static ref ENV: Mutex<FuzzEnv> = Mutex::new(FuzzEnv::new());
     pub static ref VS: VarStore = VarStore::new(Device::Cpu);
     pub static ref ROOT: nn::Path<'static> = VS.root().clone();
     pub static ref AGENT: Arc<Mutex<DQNAgent>> = Arc::new(Mutex::new(DQNAgent::new(&*VS, (*STATE_DIM.lock().unwrap()).into(), (*ACTION_DIM.lock().unwrap()).into(), (*REPLAY_BUFFER_CAPACITY.lock().unwrap()).try_into().unwrap())));
-
     pub static ref LOSS_VALUES: Mutex<Vec<f32>> = Mutex::new(Vec::new());
 
+    // pub static ref VS: Arc<Mutex<VarStore>> = Arc::new(Mutex::new(VarStore::new(Device::Cpu)));
+    // pub static ref TEMP: Arc<Mutex<VarStore>> = Arc::clone(&VS);
+    // pub static ref ROOT: nn::Path<'static> = {
+    //     TEMP.lock().unwrap().root().clone()
+    // };
+    // pub static ref AGENT: Arc<Mutex<DQNAgent>> = {
+    //     let model_path = "./test_model";
+    //     let state_dim = (*STATE_DIM.lock().unwrap()).into();
+    //     let action_dim = (*ACTION_DIM.lock().unwrap()).into();
+    //     let replay_buffer_capacity = (*REPLAY_BUFFER_CAPACITY.lock().unwrap()).try_into().unwrap();
+    //     let mut vs_lock = VS.lock().unwrap();
+    //     match DqnNet::load_model(&mut vs_lock, model_path, state_dim, action_dim) {
+    //         Ok(model) => {
+    //             Arc::new(Mutex::new(DQNAgent {
+    //                 state_dim,
+    //                 action_dim,
+    //                 model,
+    //                 replay_buffer: ReplayBuffer::new(replay_buffer_capacity),
+    //                 optimizer: nn::Adam::default().build(&vs_lock, 1e-7).unwrap(),
+    //                 actions: encode_actions(),
+    //             }))
+    //         },
+    //         Err(err) => {
+    //             eprintln!("Failed to load model from {}: {}", model_path, err);
+    //             std::process::exit(1);
+    //         }
+    //     }
+    // };
 }
+
+
 #[allow(clippy::type_complexity)]
 pub fn evm_main(mut args: EvmArgs) {
     args.setup_file = args.deployment_script;
@@ -802,24 +832,6 @@ pub fn evm_main(mut args: EvmArgs) {
 
     utils::try_write_file(&abis_json, &json_str, true).unwrap();
 
-    // //dqn算法斯调用
-    // //先定义state_dim，action_dim和replay_buffer_capacity
-    // let state_dim = 4;
-    // let action_dim = 16;
-    // let replay_buffer_capacity = 10000;
-    // let mut env = FuzzEnv::new();
-    // let vs = nn::VarStore::new(tch::Device::Cpu);
-    // let root = vs.root();
-    // let mut agent = DQNAgent::new(&root, state_dim, action_dim, replay_buffer_capacity);
-    //
-    //
-    // //定义episodes, batch_size
-    // let episodes = 100;
-    // let batch_size = 1;
-    // agent.train(&mut env, episodes, batch_size);
-    // let avg_reward = agent.evaluate(&mut env, episodes);
-    // println!("Average reward: {}", avg_reward);
-    //
     evm_fuzzer(config, &mut state)
 
 }

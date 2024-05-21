@@ -91,7 +91,7 @@ pub fn evm_fuzzer(
     state: &mut EVMFuzzState,
 ) {
     info!("\n\n ================ EVM Fuzzer Start ===================\n\n");
-    reset_p_table();
+    // reset_p_table();
     // reset_p_table2();
     // print_p_table();
 
