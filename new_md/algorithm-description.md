@@ -246,12 +246,39 @@ git有问题，现在没有官方仓库的git信息
 
 为什么不选择分层DQN，而是用端到端的全编码？（可写）
 
+### 可能的代码——prioritized replay buffer
 
+    use std::collections::BinaryHeap;
+    
+    pub struct PrioritizedReplayBuffer {
+        buffer: BinaryHeap<(f64, (Tensor, i64, i64, Tensor))>,
+        capacity: usize,
+    }
+    
+    impl PrioritizedReplayBuffer {
+        pub fn new(capacity: usize) -> PrioritizedReplayBuffer {
+        PrioritizedReplayBuffer {
+            buffer: BinaryHeap::with_capacity(capacity),
+            capacity,
+        }
+    }
 
-### 效果不好怎么调
+    pub fn push(&mut self, priority: f64, state: Tensor, action: i64, reward: i64, next_state: Tensor) {
+        if self.buffer.len() == self.capacity {
+            self.buffer.pop();
+        }
+        self.buffer.push((priority, (state, action, reward, next_state)));
+    }
 
-学习率过高：如果学习率设置得过高，那么模型在学习过程中可能会跳过最优解，导致损失值上升
-模型结构不合适：如果模型的结构（例如神经网络的层数、每层的神经元数量等）
-参数（例如优化器的类型、折扣因子等）设置不合适，也可能导致模型无法有效学习。
-训练数据的问题：如果训练数据存在问题（例如数据的分布不均匀，或者数据中存在噪声等），那么模型可能无法从中学习到有效的规律，导致损失值上升。你需要检查你的训练数据是否存在问题。  
-模型未能充分训练：在某些情况下，模型可能需要更长的时间才能收敛。如果训练时间不足，模型可能还未达到最优，此时的损失值可能会上升。你可以尝试增加训练的轮数（episodes）
+    pub fn sample(&self, batch_size: usize) -> Option<Vec<(Tensor, i64, i64, Tensor)>> {
+        if self.buffer.len() < batch_size {
+            None
+        } else {
+            Some(self.buffer.iter().map(|&(p, (s, a, r, ns))| (s.copy(), *a, *r, ns.copy())).take(batch_size).collect())
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.buffer.len()
+    }
+}

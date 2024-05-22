@@ -19,7 +19,7 @@ use plotters::prelude::*;
 use libafl_bolts::ErrorBacktrace;
 use crate::dqn_alogritm::DQNAgent;
 
-use crate::evm::LOSS_VALUES;
+use crate::evm::{EPSILON, EPSILON_DECAY, FINAL_EPSILON, LOSS_VALUES};
 // use crate::evm::{AGENT, ENV, EPISODES, BATCH_SIZE};
 use crate::global_info::MUTATE_SUCCESS_COUNT;
 
@@ -118,8 +118,9 @@ impl<E, F, EM, I, M, Z> Stage<E, EM, Z> for PowerMutationalStageWithId<E, F, EM,
         // let mut agent = DQNAgent::new_from_model(&mut var_store, "./test_model", *crate::evm::STATE_DIM.lock().unwrap() as i64, *crate::evm::ACTION_DIM.lock().unwrap() as i64, *crate::evm::REPLAY_BUFFER_CAPACITY.lock().unwrap() as usize).unwrap();
 
         let mut state_tensor = env.reset();
-        let epsilon = 0.8;
-        let (action,action_index) = agent.get_action(&state_tensor, epsilon);
+        // let epsilon = 0.8;
+        let mut epsilon = EPSILON.lock().unwrap();
+        let (action,action_index) = agent.get_action(&state_tensor, *epsilon);
         env.step_1(action);
 
         //执行变异
@@ -130,6 +131,8 @@ impl<E, F, EM, I, M, Z> Stage<E, EM, Z> for PowerMutationalStageWithId<E, F, EM,
         agent.replay_buffer.push(state_tensor, action_index, reward, next_state.clone(&next_state));
         state_tensor=next_state;
         agent.update_model(batch_size as usize);
+        //
+        *epsilon = (*epsilon * *EPSILON_DECAY.lock().unwrap()).max(*FINAL_EPSILON.lock().unwrap());
         println!("update model===========");
         if MUTATE_SUCCESS_COUNT.load(Ordering::SeqCst) > episodes as usize {
             // Save the model

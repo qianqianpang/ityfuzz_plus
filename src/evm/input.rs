@@ -946,8 +946,7 @@ impl EVMInput {
         input.set_txn_value(EVMU256::try_from_be_slice(input_vec.as_slice()).unwrap());
         res
     }
-
-    pub fn mutate_env_with_access_pattern<S>(&mut self, state: &mut S) -> MutationResult
+    pub fn mutate_env_with_access_pattern<S>(&mut self, state: &mut S,retry: usize) -> MutationResult
         where
             S: State + HasCaller<EVMAddress> + HasRand + HasMetadata,
     {
@@ -993,7 +992,6 @@ impl EVMInput {
         }
 
         let mutator_selection = get_mutator_selection();
-        // println!("、、、、、、、{:?}-----------------------------------------------------------", mutator_selection.get("3_mutate_field"));
         match mutator_selection.get("3_mutate_field") {
             Some(&1) => {
                 let idx = mutators_name.iter().position(|&r| r == "caller").unwrap();
@@ -1009,6 +1007,11 @@ impl EVMInput {
                     None => {
                         // self.mutate_env_with_access_pattern(state)
                         MutationResult::Skipped
+                        // if retry < 5 {
+                        //     self.mutate_env_with_access_pattern(state,retry+1)
+                        // } else {
+                        //     MutationResult::Skipped
+                        // }
                     }
                 }
             }
@@ -1051,6 +1054,11 @@ impl EVMInput {
                     None => {
                         // self.mutate_env_with_access_pattern(state)
                         MutationResult::Skipped
+                        // if retry < 5 {
+                        //     self.mutate_env_with_access_pattern(state,retry+1)
+                        // } else {
+                        //     MutationResult::Skipped
+                        // }
                     }
                 }
             }//不可达的  10 11？？？
@@ -1159,7 +1167,7 @@ impl VMInputT<EVMState, EVMAddress, EVMAddress, ConciseEVMInput> for EVMInput {
         let mutator_selection = get_mutator_selection();
         match mutator_selection.get("2_env_args") {
             Some(&1) => {
-                return self.mutate_env_with_access_pattern(state);
+                return self.mutate_env_with_access_pattern(state,1);
             }
             Some(&2) => {
                 let vm_slots = self.get_state().get(&self.get_contract()).cloned();

@@ -25,9 +25,6 @@ pub mod tokens;
 pub mod types;
 pub mod utils;
 pub mod vm;
-mod mutator_dqn;
-mod input_dqn;
-mod abi_dqn;
 
 use std::{
     cell::RefCell,
@@ -421,13 +418,17 @@ lazy_static! {
     pub static ref ACTION_DIM: Mutex<i32> = Mutex::new(2500);
     pub static ref REPLAY_BUFFER_CAPACITY: Mutex<i32> = Mutex::new(10000);
     pub static ref EPISODES: Mutex<i64> = Mutex::new(10000000000);
-    pub static ref BATCH_SIZE: Mutex<i32> = Mutex::new(128);
+    pub static ref BATCH_SIZE: Mutex<i32> = Mutex::new(256);
 
     pub static ref ENV: Mutex<FuzzEnv> = Mutex::new(FuzzEnv::new());
     pub static ref VS: VarStore = VarStore::new(Device::Cpu);
     pub static ref ROOT: nn::Path<'static> = VS.root().clone();
     pub static ref AGENT: Arc<Mutex<DQNAgent>> = Arc::new(Mutex::new(DQNAgent::new(&*VS, (*STATE_DIM.lock().unwrap()).into(), (*ACTION_DIM.lock().unwrap()).into(), (*REPLAY_BUFFER_CAPACITY.lock().unwrap()).try_into().unwrap())));
     pub static ref LOSS_VALUES: Mutex<Vec<f32>> = Mutex::new(Vec::new());
+
+    pub static ref EPSILON: Mutex<f64> = Mutex::new(0.8);
+    pub static ref FINAL_EPSILON: Mutex<f64> = Mutex::new(0.01);
+    pub static ref EPSILON_DECAY: Mutex<f64> = Mutex::new(0.95);
 
     // pub static ref VS: Arc<Mutex<VarStore>> = Arc::new(Mutex::new(VarStore::new(Device::Cpu)));
     // pub static ref TEMP: Arc<Mutex<VarStore>> = Arc::clone(&VS);
