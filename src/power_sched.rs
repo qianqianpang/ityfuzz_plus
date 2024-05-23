@@ -134,16 +134,14 @@ impl<E, F, EM, I, M, Z> Stage<E, EM, Z> for PowerMutationalStageWithId<E, F, EM,
         //
         *epsilon = (*epsilon * *EPSILON_DECAY.lock().unwrap()).max(*FINAL_EPSILON.lock().unwrap());
         println!("update model===========");
-        if MUTATE_SUCCESS_COUNT.load(Ordering::SeqCst) > episodes as usize {
-            // Save the model
-            agent.model.save("./test_model").unwrap();
+        if MUTATE_SUCCESS_COUNT.load(Ordering::SeqCst) % 5000 == 0 {
+            // Save the model 画loss图
+            agent.model.save("./dqn_net").unwrap();
             let loss_values = LOSS_VALUES.lock().unwrap();
-
             match plot_loss_values(&loss_values) {
                 Ok(_) => (),
                 Err(e) => return Err(Error::Unknown(format!("{}", e), ErrorBacktrace::new())),
             }
-            std::process::exit(0);
         }
         // let avg_reward = agent.evaluate(&mut *env, episodes.try_into().unwrap());
         // println!("Average reward: {}", avg_reward);

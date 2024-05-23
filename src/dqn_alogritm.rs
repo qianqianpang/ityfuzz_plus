@@ -1,28 +1,26 @@
 use std::collections::HashMap;
 use std::collections::VecDeque;
+use std::convert::TryInto;
+use std::error::Error;
 use std::sync::{Arc, Mutex};
 use std::vec::Vec;
-
 use bytes::Bytes;
+use csv::Reader;
+use indicatif::{ProgressBar, ProgressStyle};
 use lazy_static::lazy_static;
 use rand::Rng;
-use revm_primitives::{B160, B256, Env, U256};
+use revm_primitives::{Env, U256};
 use tch::{Kind, nn, nn::Module, nn::Optimizer, nn::OptimizerConfig, Tensor};
-use std::convert::TryInto;
+use tch::nn::VarStore;
+use crate::evm::abi::BoxedABI;
 use crate::evm::input::{EVMInput, EVMInputTy};
+use crate::evm::LOSS_VALUES;
 use crate::evm::mutator::AccessPattern;
 use crate::evm::types::EVMAddress;
 use crate::global_info::get_value;
-use crate::state_input::StagedVMState;
-use csv::Reader;
-use std::error::Error;
-use libafl_bolts::ErrorBacktrace;
-use tch::nn::VarStore;
-use crate::dqn_alogritm;
-use crate::evm::abi::BoxedABI;
-use crate::evm::LOSS_VALUES;
 use crate::input::VMInputT;
-use crate::power_sched::plot_loss_values;
+use crate::state_input::StagedVMState;
+
 lazy_static! {
     pub static ref GLOBAL_INPUT: Mutex<EVMInput> = Mutex::new(EVMInput {
         input_type: EVMInputTy::ABI,
@@ -132,10 +130,8 @@ pub fn encode_actions() -> Vec<i64> {
     actions.clone()
 }
 //state的设计和方法================================================================================================================
-// 通常会将所有的输入数据转换为浮点数（通常是f32），因为神经网络的运算（如加法、乘法、激活函数等）都是在浮点数上进行的。
-// 状态通常是一个向量，表示环境的当前状态。在神经网络中，这通常是一个浮点数类型的张量（Tensor）。
 pub struct State {
-    //1）每次测试都是针对一个contract，所以每轮中以下特征都是一样的
+    //1）每轮中以下特征都是一样的
     // sstate_initialize: bool,
     // step: bool,
     // liquidation_percent: u8,
@@ -162,20 +158,16 @@ pub struct State {
     // disable_base_fee: bool,//是否禁用 EIP-1559 交易的基础费用检查。这对于测试零 gas 价格的方法调用很有用。
     // number: U256,//区块的编号，表示该区块在区块链中的位置
     // coinbase: B160,//矿工或者区块的创建者和签名者的地址
-
-
-    //NEED
-    function: [u8;4],//函数签名
     // get_bytes: [u8;32],//ABI
     // contract ={revm_primitives::bits::B160}，_0 [u8,20]
     // data = {core::option::Option<ityfuzz::evm::abi::BoxedABl>}
-        // variant0 ={enum2$<core::option::Option>::Variant0}:value,name (NONE)
-        // variant1 ={enum2$<core::option::Option>::Variant1}:value name （some）:_0:
-            //b:
-                // pointer={*mut dyn$<ityfuzz::evm::abi::ABl>},指向动态类型ityfuzz::evm::abi::ABl
-                // vtable={*mut [u64; 3]}指向虚函数表（vtable），这个表包含了指向实现了ityfuzz::evm::abi::ABl特性的类型的方法的指针。
-            //function[u8,4]
-        //tag
+    // variant0 ={enum2$<core::option::Option>::Variant0}:value,name (NONE)
+    // variant1 ={enum2$<core::option::Option>::Variant1}:value name （some）:_0:
+    //b:
+    // pointer={*mut dyn$<ityfuzz::evm::abi::ABl>},指向动态类型ityfuzz::evm::abi::ABl
+    // vtable={*mut [u64; 3]}指向虚函数表（vtable），这个表包含了指向实现了ityfuzz::evm::abi::ABl特性的类型的方法的指针。
+    //function[u8,4]
+    //tag
     // sstate_state: EVMState,
     //state,swap_data,reentrancy_metadata,integer_overflow,arbitrary_calls,typed_bug,self_destruct,bug_hit,flashloan_data,post_execution,balance
     // txn_value: Option<EVMU256>,
@@ -184,8 +176,10 @@ pub struct State {
     // swap_data:
     // spec_id: SpecId,
     // perf_analyse_created_bytecodes: AnalysisKind,
-
     // access_list: Vec<(B160, Vec<U256>)>,//交易的访问列表。这个字段是在EIP-2930升级后引入的，用于指定交易可以访问的地址和存储槽。
+
+
+    function: [u8;4],//函数签名
 }
 
 impl State {
@@ -263,20 +257,16 @@ impl State {
         //     Some(value) => value as f32,
         //     None => 0.0,
         // };
-
         // let mut temp: f32 = 0.0;
         // for &value in &self.randomness {
         //     temp = value as f32;
         //     break
         // }
-
         // let get_bytes_f32: Vec<f32> = self.get_bytes.iter().map(|&b| b as f32).collect();
         let function_f32: Vec<f32> = self.function.iter().map(|&b| b as f32).collect();
-
         let mut input_data = vec![];
         // input_data.extend(get_bytes_f32);
         input_data.extend(function_f32);
-
         let input_tensor = Tensor::from_slice(&input_data);
         println!("tensor~~~~~~~~~~~~~~~~~~~~{:?}", input_data);
 
@@ -331,10 +321,6 @@ impl FuzzEnv {
         state.to_tensor()
     }
     pub fn step_1(&mut self, action: i64) {
-        //返回一个元组，包含一个Tensor（新的状态），一个i64（奖励）和一个bool（表示任务是否完成）
-        // 执行动作——根据action 进行变异（改变state）
-        // 执行动作——根据action 进行变异（改变state）
-
         set_global_mutation(action);
         set_mutator_selection();
     }
@@ -405,73 +391,43 @@ impl ReplayBuffer {
     }
 }
 //DQN Net===============================================================================================================
-// #[derive(Debug)]
-// pub struct DqnNet {
-//     fc1: nn::Linear,
-//     fc2: nn::Linear,
-//     fc3: nn::Linear,
-// }
-//
-// impl DqnNet {
-//     // output_dim表示可能的动作的数量 现在=13，输入的维度现在是4
-//     pub fn new(vs: &nn::Path, input_dim: i64, output_dim: i64) -> DqnNet {
-//         let fc1 = nn::linear(vs / "fc1", input_dim, 128, Default::default());
-//         let fc2 = nn::linear(vs / "fc2", 128, 64, Default::default());
-//         let fc3 = nn::linear(vs / "fc3", 64, output_dim, Default::default());
-//         DqnNet { fc1, fc2, fc3 }
-//     }
-// }
-//
-// impl Module for DqnNet {
-//     fn forward(&self, xs: &Tensor) -> Tensor {
-//         xs.apply(&self.fc1)
-//             .relu()
-//             .apply(&self.fc2)
-//             .relu()
-//             .apply(&self.fc3)
-//     }
-// }
 #[derive(Debug)]
-pub struct DqnNet<'a> {
+pub struct DqnNet {
     fc1: nn::Linear,
     fc2: nn::Linear,
     fc3: nn::Linear,
     fc4: nn::Linear,
     fc5: nn::Linear,
-    vs: &'a VarStore,  // 存储神经网络参数的结构
+    vs: Arc<Mutex<VarStore>>,  // 存储神经网络参数的结构
 }
 
-impl<'a> DqnNet<'a> {
-    pub fn new(vs: &'a nn::VarStore, input_dim: i64, output_dim: i64) -> DqnNet<'a> {
-        let fc1 = nn::linear(vs.root() / "fc1", input_dim, 256, Default::default());  // input_dim 应该是5
-        let fc2 = nn::linear(vs.root() / "fc2", 256, 128, Default::default());  // 输入维度应该是 fc1 的输出维度，即256
-        let fc3 = nn::linear(vs.root() / "fc3", 128, 64, Default::default());  // 输入维度应该是 fc2 的输出维度，即128
-        let fc4 = nn::linear(vs.root() / "fc4", 64, 32, Default::default());  // 输入维度应该是 fc3 的输出维度，即64
-        let fc5 = nn::linear(vs.root() / "fc5", 32, output_dim, Default::default());  // 输入维度应该是 fc4 的输出维度，即32
-        DqnNet { fc1, fc2, fc3, fc4, fc5, vs }
+impl DqnNet {
+    pub fn new(vs: Arc<Mutex<nn::VarStore>>, input_dim: i64, output_dim: i64) -> DqnNet {
+        let vs_clone = Arc::clone(&vs);
+        let mut vs = vs.lock().unwrap();
+        let fc1 = nn::linear(vs.root() / "fc1", input_dim, 256, Default::default());
+        let fc2 = nn::linear(vs.root() / "fc2", 256, 128, Default::default());
+        let fc3 = nn::linear(vs.root() / "fc3", 128, 64, Default::default());
+        let fc4 = nn::linear(vs.root() / "fc4", 64, 32, Default::default());
+        let fc5 = nn::linear(vs.root() / "fc5", 32, output_dim, Default::default());
+        DqnNet { fc1, fc2, fc3, fc4, fc5, vs: vs_clone }
     }
-    // pub fn new(vs: &mut VarStore, input_dim: i64, output_dim: i64, model_path: Option<&str>) -> DqnNet<'a> {
-    //     let fc1 = nn::linear(vs.root() / "fc1", input_dim, 256, Default::default());
-    //     let fc2 = nn::linear(vs.root() / "fc2", 256, 128, Default::default());
-    //     let fc3 = nn::linear(vs.root() / "fc3", 128, 64, Default::default());
-    //     let fc4 = nn::linear(vs.root() / "fc4", 64, 32, Default::default());
-    //     let fc5 = nn::linear(vs.root() / "fc5", 32, output_dim, Default::default());
-    //
-    //     if let Some(path) = model_path {
-    //         vs.load(path)?;  // 加载模型参数
-    //     }
-    //
-    //     DqnNet { fc1, fc2, fc3, fc4, fc5, vs }
-    // }
-    // 新增方法
-    pub fn save(&self, path: &str) -> tch::Result<()> {
-        self.vs.save(path)
-    }
-}
 
-impl<'a> Module for DqnNet<'a> {
-    fn forward(&self, xs: &Tensor) -> Tensor {
-        xs.apply(&self.fc1)
+    pub fn save(&self, path: &str) -> Result<(), Box<dyn Error>> {
+        let vs = self.vs.lock().unwrap();
+        vs.save(path)?;
+        Ok(())
+    }
+
+    pub fn load(vs: Arc<Mutex<nn::VarStore>>, path: &str, input_dim: i64, output_dim: i64) -> Result<DqnNet, Box<dyn Error>> {
+        let vs_clone = Arc::clone(&vs);
+        let mut vs = vs.lock().unwrap();
+        vs.load(path)?;
+        Ok(DqnNet::new(vs_clone, input_dim, output_dim))
+    }
+
+    pub fn forward(&self, x: &Tensor) -> Tensor {
+        x.apply(&self.fc1)
             .relu()
             .apply(&self.fc2)
             .relu()
@@ -482,31 +438,48 @@ impl<'a> Module for DqnNet<'a> {
             .apply(&self.fc5)
     }
 }
-
-//DQNAgent============================================================================================00000000==============
+//DQNAgent=============================================================================================================
 pub struct DQNAgent {
     pub(crate) state_dim: i64,
     pub(crate) action_dim: i64,
-    pub(crate) model: DqnNet<'static>,
+    pub(crate) model: DqnNet,
     pub(crate) replay_buffer: ReplayBuffer,
     pub(crate) optimizer: Optimizer,
     pub(crate) actions: Vec<i64>,
-    pub(crate) discount_factor: f32,  // 新增一个字段来存储折扣因子
+    pub(crate) discount_factor: f32,//折扣因子
 }
 
-impl DQNAgent {  // 修改生命周期参数为'static
-    pub fn new(vs: &'static nn::VarStore, state_dim: i64, action_dim: i64, replay_buffer_capacity: usize) -> DQNAgent {
-        let model = DqnNet::new(vs, state_dim, action_dim);
+impl DQNAgent {
+    pub fn new(vs: Arc<Mutex<VarStore>>, state_dim: i64, action_dim: i64, replay_buffer_capacity: usize) -> DQNAgent {
+        // 加载模型
+        // let vs_loaded = Arc::new(Mutex::new(nn::VarStore::new(tch::Device::Cpu)));
+        // println!("我在读");
+        // let pb = ProgressBar::new(100);
+        // pb.set_style(ProgressStyle::default_bar()
+        //     .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta})").expect("REASON")
+        //     .progress_chars("#>-"));
+        // let loaded_dqn_net_result = DqnNet::load(vs_loaded.clone(), "./dqn_net.ot", state_dim, action_dim);
+        // let model=match loaded_dqn_net_result {
+        //     Ok(net) => {
+        //         pb.finish_with_message("Model loaded successfully");
+        //         net
+        //     },
+        //     Err(e) => {
+        //         eprintln!("Failed to load the model: {}", e);
+        //         pb.abandon_with_message("Failed to load the model");
+        //         DqnNet::new(vs.clone(), state_dim, action_dim)
+        //     }
+        // };
+        let model=DqnNet::new(vs.clone(), state_dim, action_dim);
+        // 创建不可变的 vs 副本以供优化器使用
+        let optimizer_vs = vs.clone();
+        let optimizer = nn::Adam::default().build(&mut optimizer_vs.lock().unwrap(), 1e-7).unwrap();
+
         let replay_buffer = ReplayBuffer::new(replay_buffer_capacity);
-        let optimizer = nn::Adam::default().build(vs, 1e-7).unwrap();
         let actions = encode_actions();
         let discount_factor = 0.5;  // 设置折扣因子
+
         DQNAgent { state_dim, action_dim, model, replay_buffer, optimizer, actions, discount_factor }
-    }
-    pub fn new_from_model(vs: &'static mut nn::VarStore, path: &str, input_dim: i64, output_dim: i64, replay_buffer_capacity: usize) -> tch::Result<Self> {
-        vs.load(path)?;
-        let model = Self::new(vs, input_dim, output_dim, replay_buffer_capacity);
-        Ok(model)
     }
     // pub fn train(&mut self, env: &mut FuzzEnv, episodes: usize, batch_size: usize) {
     //     for _ in 0..episodes {
@@ -591,7 +564,7 @@ impl DQNAgent {  // 修改生命周期参数为'static
             // }
             //动态调整折扣因子——Frame Skipping
             if max_diff < 10.0 {
-                // if max_diff < 0.5 {
+                // if max_diff < 0.5 { //训练到收敛才结束，注释后 只有找到bug才结束
                 //     match plot_loss_values(&loss_values) {
                 //         Ok(_) => (),
                 //         Err(e) => return Err(libafl::Error::Unknown(format!("{}", e), ErrorBacktrace::new())),

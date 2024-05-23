@@ -421,45 +421,20 @@ lazy_static! {
     pub static ref BATCH_SIZE: Mutex<i32> = Mutex::new(256);
 
     pub static ref ENV: Mutex<FuzzEnv> = Mutex::new(FuzzEnv::new());
-    pub static ref VS: VarStore = VarStore::new(Device::Cpu);
-    pub static ref ROOT: nn::Path<'static> = VS.root().clone();
-    pub static ref AGENT: Arc<Mutex<DQNAgent>> = Arc::new(Mutex::new(DQNAgent::new(&*VS, (*STATE_DIM.lock().unwrap()).into(), (*ACTION_DIM.lock().unwrap()).into(), (*REPLAY_BUFFER_CAPACITY.lock().unwrap()).try_into().unwrap())));
+    pub static ref VS: Arc<Mutex<VarStore>> = Arc::new(Mutex::new(VarStore::new(Device::Cpu)));
+    pub static ref AGENT: Arc<Mutex<DQNAgent>> = Arc::new(Mutex::new(
+        DQNAgent::new(
+            VS.clone(),
+            (*STATE_DIM.lock().unwrap()).into(),
+            (*ACTION_DIM.lock().unwrap()).into(),
+            (*REPLAY_BUFFER_CAPACITY.lock().unwrap()).try_into().unwrap()
+        )
+    ));
     pub static ref LOSS_VALUES: Mutex<Vec<f32>> = Mutex::new(Vec::new());
-
     pub static ref EPSILON: Mutex<f64> = Mutex::new(0.8);
     pub static ref FINAL_EPSILON: Mutex<f64> = Mutex::new(0.01);
     pub static ref EPSILON_DECAY: Mutex<f64> = Mutex::new(0.95);
-
-    // pub static ref VS: Arc<Mutex<VarStore>> = Arc::new(Mutex::new(VarStore::new(Device::Cpu)));
-    // pub static ref TEMP: Arc<Mutex<VarStore>> = Arc::clone(&VS);
-    // pub static ref ROOT: nn::Path<'static> = {
-    //     TEMP.lock().unwrap().root().clone()
-    // };
-    // pub static ref AGENT: Arc<Mutex<DQNAgent>> = {
-    //     let model_path = "./test_model";
-    //     let state_dim = (*STATE_DIM.lock().unwrap()).into();
-    //     let action_dim = (*ACTION_DIM.lock().unwrap()).into();
-    //     let replay_buffer_capacity = (*REPLAY_BUFFER_CAPACITY.lock().unwrap()).try_into().unwrap();
-    //     let mut vs_lock = VS.lock().unwrap();
-    //     match DqnNet::load_model(&mut vs_lock, model_path, state_dim, action_dim) {
-    //         Ok(model) => {
-    //             Arc::new(Mutex::new(DQNAgent {
-    //                 state_dim,
-    //                 action_dim,
-    //                 model,
-    //                 replay_buffer: ReplayBuffer::new(replay_buffer_capacity),
-    //                 optimizer: nn::Adam::default().build(&vs_lock, 1e-7).unwrap(),
-    //                 actions: encode_actions(),
-    //             }))
-    //         },
-    //         Err(err) => {
-    //             eprintln!("Failed to load model from {}: {}", model_path, err);
-    //             std::process::exit(1);
-    //         }
-    //     }
-    // };
 }
-
 
 #[allow(clippy::type_complexity)]
 pub fn evm_main(mut args: EvmArgs) {
