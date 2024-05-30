@@ -26,6 +26,7 @@ use libafl::{
         Mutator,
         QwordAddMutator,
         WordAddMutator,
+        StdScheduledMutator,
         WordInterestingMutator,
     },
     state::{HasMaxSize, HasRand, State},
@@ -232,13 +233,13 @@ where
         ByteInterestingMutator::new(),
         WordInterestingMutator::new(),
         DwordInterestingMutator::new(),
-        BytesSetMutator::new(),
-        BytesRandSetMutator::new(),
-        BytesSwapMutator::new(),
-        BytesCopyMutator::new(),
         BytesExpandMutator::new(),
         BytesInsertMutator::new(),
         BytesRandInsertMutator::new(),
+        BytesSetMutator::new(),
+        BytesRandSetMutator::new(),
+        BytesCopyMutator::new(),
+        BytesSwapMutator::new(),
     );
 
     if let Some(vm_slots) = vm_slots {

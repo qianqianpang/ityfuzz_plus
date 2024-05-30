@@ -11,7 +11,7 @@ use std::{
     time::Duration,
 };
 use std::sync::atomic::Ordering;
-use crate::global_info::{IS_OBJECTIVE, IS_CMP_INTERESTING, IS_DATAFLOW_INTERESTING, print_feedback_info, print_p_table};
+use crate::global_info::{IS_OBJECTIVE, IS_CMP_INTERESTING, IS_DATAFLOW_INTERESTING, IS_INSTRUCTION_INTERESTING, print_feedback_info, print_p_table, print_mutation_op};
 use crate::global_info::{MUTATE_SUCCESS_COUNT};
 use itertools::Itertools;
 use libafl::{

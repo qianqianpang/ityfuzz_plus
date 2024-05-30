@@ -25,13 +25,12 @@ pub mod tokens;
 pub mod types;
 pub mod utils;
 pub mod vm;
-mod mutator_dqn;
-mod input_dqn;
-mod abi_dqn;
 
 use std::{
     cell::RefCell,
     collections::{HashMap, HashSet},
+    fs::OpenOptions,
+    io::Write,
     path::Path,
     rc::Rc,
     str::FromStr,
@@ -54,7 +53,6 @@ use oracles::{erc20::IERC20OracleFlashloan, v2_pair::PairBalanceOracle};
 use producers::erc20::ERC20Producer;
 use serde::Deserialize;
 use serde_json::json;
-use tch::{Device, nn};
 use types::{EVMAddress, EVMFuzzState, EVMU256};
 use vm::EVMState;
 
@@ -64,7 +62,6 @@ use crate::{
     oracle::{Oracle, Producer},
     state::FuzzState,
 };
-// use crate::dqn_alogritm::{DQNAgent, FuzzEnv};
 
 pub fn parse_constructor_args_string(input: String) -> HashMap<String, Vec<String>> {
     let mut map = HashMap::new();
@@ -408,23 +405,6 @@ impl OracleType {
     }
 }
 
-
-// use lazy_static::lazy_static;
-// use std::sync::Mutex;
-// use tch::nn::VarStore;
-//
-// lazy_static! {
-//     static ref STATE_DIM: Mutex<i32> = Mutex::new(4);
-//     static ref ACTION_DIM: Mutex<i32> = Mutex::new(16);
-//     static ref REPLAY_BUFFER_CAPACITY: Mutex<i32> = Mutex::new(10000);
-//     static ref EPISODES: Mutex<i32> = Mutex::new(100);
-//     static ref BATCH_SIZE: Mutex<i32> = Mutex::new(1);
-//
-//     static ref ENV: FuzzEnv = FuzzEnv::new();
-//     static ref VS: VarStore = VarStore::new(Device::Cpu);
-//     static ref ROOT: nn::Path = VS.root();
-//     static ref AGENT: DQNAgent = DQNAgent::new(&*ROOT, *STATE_DIM.lock().unwrap(), *ACTION_DIM.lock().unwrap(), *REPLAY_BUFFER_CAPACITY.lock().unwrap());
-// }
 #[allow(clippy::type_complexity)]
 pub fn evm_main(mut args: EvmArgs) {
     args.setup_file = args.deployment_script;
@@ -796,25 +776,5 @@ pub fn evm_main(mut args: EvmArgs) {
     let abis_json = format!("{}/abis.json", args.work_dir.clone().as_str());
 
     utils::try_write_file(&abis_json, &json_str, true).unwrap();
-
-    // //dqn算法斯调用
-    // //先定义state_dim，action_dim和replay_buffer_capacity
-    // let state_dim = 4;
-    // let action_dim = 16;
-    // let replay_buffer_capacity = 10000;
-    // let mut env = FuzzEnv::new();
-    // let vs = nn::VarStore::new(tch::Device::Cpu);
-    // let root = vs.root();
-    // let mut agent = DQNAgent::new(&root, state_dim, action_dim, replay_buffer_capacity);
-    //
-    //
-    // //定义episodes, batch_size
-    // let episodes = 100;
-    // let batch_size = 1;
-    // agent.train(&mut env, episodes, batch_size);
-    // let avg_reward = agent.evaluate(&mut env, episodes);
-    // println!("Average reward: {}", avg_reward);
-    //
     evm_fuzzer(config, &mut state)
-
 }

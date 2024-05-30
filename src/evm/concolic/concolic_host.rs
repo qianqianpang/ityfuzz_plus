@@ -13,7 +13,7 @@ use lazy_static::lazy_static;
 use libafl::schedulers::Scheduler;
 use revm_interpreter::Interpreter;
 use serde::{Deserialize, Serialize};
-use tracing::{debug};
+use tracing::{debug, error};
 use z3::{
     ast::{Ast, Bool, BV},
     Config,
@@ -729,8 +729,8 @@ impl ConcolicHost {
 }
 
 impl<SC> Middleware<SC> for ConcolicHost
-where
-    SC: Scheduler<State = EVMFuzzState> + Clone,
+    where
+        SC: Scheduler<State = EVMFuzzState> + Clone,
 {
     unsafe fn on_step(&mut self, interp: &mut Interpreter, _host: &mut FuzzHost<SC>, _state: &mut EVMFuzzState) {
         macro_rules! fast_peek {

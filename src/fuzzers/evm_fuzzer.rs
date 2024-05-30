@@ -11,7 +11,6 @@ use libafl::{
 };
 use libafl_bolts::tuples::tuple_list;
 use revm_primitives::Bytecode;
-use tch::nn;
 use tracing::{debug, error, info};
 
 use crate::{
@@ -70,8 +69,7 @@ use crate::{
     scheduler::SortedDroppingScheduler,
     state::{FuzzState, HasCaller, HasExecutionResult, HasPresets},
 };
-use crate::dqn_alogritm::{DQNAgent, FuzzEnv};
-use crate::global_info::{reset_p_table, reset_p_table2};
+use crate::global_info::{print_p_table, reset_p_table,reset_p_table2};
 
 #[allow(clippy::type_complexity)]
 pub fn evm_fuzzer(
@@ -91,7 +89,7 @@ pub fn evm_fuzzer(
     state: &mut EVMFuzzState,
 ) {
     info!("\n\n ================ EVM Fuzzer Start ===================\n\n");
-    reset_p_table();
+    // reset_p_table();
     // reset_p_table2();
     // print_p_table();
 

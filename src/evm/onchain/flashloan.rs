@@ -12,7 +12,6 @@ use std::{
     str::FromStr,
     time::Duration,
 };
-use std::sync::{Arc, Mutex};
 
 use bytes::Bytes;
 use libafl::{
@@ -98,7 +97,7 @@ where
                 txn_value: Some(EVMU256::from_str("10000000000000000000").unwrap()),
                 step: false,
                 env: state.metadata_map().get::<EnvMetadata>().unwrap().env.clone(),
-                access_pattern: Arc::new(Mutex::new(AccessPattern::new())),
+                access_pattern: Rc::new(RefCell::new(AccessPattern::new())),
                 liquidation_percent: 0,
                 direct_data: Default::default(),
                 randomness: vec![0],
