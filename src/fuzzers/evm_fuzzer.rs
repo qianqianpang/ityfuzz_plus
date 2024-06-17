@@ -3,12 +3,7 @@ use std::{cell::RefCell, collections::HashMap, fs::File, io::Read, ops::Deref, p
 use bytes::Bytes;
 use glob::glob;
 use itertools::Itertools;
-use libafl::{
-    feedbacks::Feedback,
-    prelude::{HasMetadata, MaxMapFeedback, SimpleEventManager, SimpleMonitor, StdMapObserver},
-    Evaluator,
-    Fuzzer,
-};
+use libafl::{feedbacks::Feedback, prelude::{HasMetadata, MaxMapFeedback, SimpleEventManager, SimpleMonitor, StdMapObserver}, Evaluator, Fuzzer, ExecuteInputResult};
 use libafl_bolts::tuples::tuple_list;
 use revm_primitives::Bytecode;
 use tch::nn;
@@ -151,6 +146,9 @@ pub fn evm_fuzzer(
         }
     }
 
+    // unsafe {
+    //     RUN_FOREVER = true;
+    // }
     if config.run_forever {
         unsafe {
             RUN_FOREVER = true;
@@ -528,6 +526,7 @@ pub fn evm_fuzzer(
                 }
             }
             let res = fuzzer.fuzz_loop(&mut stages, &mut executor, state, &mut mgr);
+
             // cov_middleware.borrow_mut().record_instruction_coverage();
             // it is not possible to reach here unless an exception is thrown
             let rv = res.err().unwrap().to_string();
@@ -538,7 +537,7 @@ pub fn evm_fuzzer(
                 error!("{}", rv);
             }
 
-            exit(1);
+            // exit(1);
         }
         Some(_) => {
             //回放测试

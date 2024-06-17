@@ -216,7 +216,9 @@ mutator。rs调用set GLOBAL_INPUT
 14. 修改set函数 之前的有问题
 15. 修改全集编码  之前有错误
 16. mutator.rs修改该20为10：while res != MutationResult::Mutated && tries < 10
-
+17. 。。。。。。。。。。。。。。。。。
+18. net初始化
+19. 修改scheduler.rs  改 corpus_size-= unsafe{}
 
 
 #### todo

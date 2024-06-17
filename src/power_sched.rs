@@ -1,27 +1,20 @@
 //! The power schedules. This stage should be invoked after the calibration
 //! stage.
 use core::{fmt::Debug, marker::PhantomData};
+use std::collections::HashMap;
 use std::sync::atomic::Ordering;
 use std::sync::Mutex;
+use crate::evm::MUTATE_SUCCESS_COUNT;
 use lazy_static::lazy_static;
-
-use libafl::{
-    corpus::{Corpus, CorpusId},
-    Error,
-    executors::{Executor, HasObservers},
-    fuzzer::Evaluator,
-    mutators::Mutator,
-    prelude::Testcase,
-    stages::{mutational::MutatedTransform, MutationalStage, Stage},
-    state::{HasClientPerfMonitor, HasCorpus, HasMetadata, HasRand, UsesState},
-};
-use plotters::prelude::*;
+use libafl::{corpus::{Corpus, CorpusId}, Error, ExecuteInputResult, executors::{Executor, HasObservers}, fuzzer::Evaluator, mark_feature_time, mutators::Mutator, prelude::Testcase, stages::{mutational::MutatedTransform, MutationalStage, Stage}, start_timer, state::{HasClientPerfMonitor, HasCorpus, HasMetadata, HasRand, UsesState}};
+use libafl::mutators::MutationResult;
+use libafl::prelude::mutational::MutatedTransformPost;
 use libafl_bolts::ErrorBacktrace;
-use crate::dqn_alogritm::DQNAgent;
+use plotters::prelude::*;
 
-use crate::evm::{EPSILON, EPSILON_DECAY, FINAL_EPSILON, LOSS_VALUES};
+use crate::evm::{ACTION_COUNTS, EPSILON, LOSS_VALUES, REWARD_VALUES, SOLUTION_FLAG};
 // use crate::evm::{AGENT, ENV, EPISODES, BATCH_SIZE};
-use crate::global_info::MUTATE_SUCCESS_COUNT;
+use crate::global_info::{calculate_value};
 
 pub trait TestcaseScoreWithId<S>
     where
@@ -77,11 +70,61 @@ impl<E, F, EM, I, M, Z> MutationalStage<E, EM, I, M, Z> for PowerMutationalStage
 
         Ok(score)
     }
+
+    fn perform_mutational(
+        &mut self,
+        fuzzer: &mut Z,
+        executor: &mut E,
+        state: &mut E::State,
+        manager: &mut EM,
+        corpus_idx: CorpusId,
+    ) -> Result<(), Error> {
+        let num = self.iterations(state, corpus_idx)?;
+
+        start_timer!(state);
+        let mut testcase = state.corpus().get(corpus_idx)?.borrow_mut();
+        let Ok(input) = I::try_transform_from(&mut testcase, state, corpus_idx) else {
+            return Ok(());
+        };
+        drop(testcase);
+        mark_feature_time!(state, PerfFeature::GetInputFromCorpus);
+
+        for i in 0..num {
+            let mut input = input.clone();
+
+            start_timer!(state);
+            let mutated = self.mutator_mut().mutate(state, &mut input, i as i32)?;
+            mark_feature_time!(state, PerfFeature::Mutate);
+
+            if mutated == MutationResult::Skipped {
+                continue;
+            }
+
+            // Time is measured directly the `evaluate_input` function
+            let (untransformed, post) = input.try_transform_into(state)?;
+            let (res, corpus_idx) = fuzzer.evaluate_input(state, executor, manager, untransformed)?;
+            match res {
+                ExecuteInputResult::Solution => {
+                    // println!("result is ExecuteInputResult::Solution");
+                    SOLUTION_FLAG.store(1, Ordering::SeqCst);
+                }
+                _ => {
+                    // println!("result is not ExecuteInputResult::Solution");
+                    // 继续循环
+                }
+            }
+
+            start_timer!(state);
+            self.mutator_mut().post_exec(state, i as i32, corpus_idx)?;
+            post.post_exec(state, i as i32, corpus_idx)?;
+            mark_feature_time!(state, PerfFeature::MutatePostExec);
+        }
+        Ok(())
+    }
 }
 lazy_static! {
     static ref VAR_STORE: Mutex<tch::nn::VarStore> = Mutex::new(tch::nn::VarStore::new(tch::Device::Cpu));
 }
-
 
 impl<E, F, EM, I, M, Z> Stage<E, EM, Z> for PowerMutationalStageWithId<E, F, EM, I, M, Z>
     where
@@ -105,7 +148,7 @@ impl<E, F, EM, I, M, Z> Stage<E, EM, Z> for PowerMutationalStageWithId<E, F, EM,
     ) -> Result<(), Error> {
         // 在即将变异的地方增加计数
 
-        MUTATE_SUCCESS_COUNT.fetch_add(1, Ordering::SeqCst);
+        MUTATE_SUCCESS_COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         println!("===============================================================执行mutate stage perform======================================================================");
 
         //dqn_1
@@ -132,24 +175,80 @@ impl<E, F, EM, I, M, Z> Stage<E, EM, Z> for PowerMutationalStageWithId<E, F, EM,
         state_tensor=next_state;
         agent.update_model(batch_size as usize);
         //
-        *epsilon = (*epsilon * *EPSILON_DECAY.lock().unwrap()).max(*FINAL_EPSILON.lock().unwrap());
+        // *epsilon = (*epsilon * *EPSILON_DECAY.lock().unwrap()).max(*FINAL_EPSILON.lock().unwrap());
         println!("update model===========");
-        if MUTATE_SUCCESS_COUNT.load(Ordering::SeqCst) % 5000 == 0 {
+        if MUTATE_SUCCESS_COUNT.load(std::sync::atomic::Ordering::SeqCst) % 5000 == 0 {
             // Save the model 画loss图
-            agent.model.save("./dqn_net").unwrap();
+            agent.model.save("./dqn_net.ot").unwrap();
             let loss_values = LOSS_VALUES.lock().unwrap();
             match plot_loss_values(&loss_values) {
                 Ok(_) => (),
                 Err(e) => return Err(Error::Unknown(format!("{}", e), ErrorBacktrace::new())),
             }
+
+            plot_reward_values();
+            let filename = "res/action_counts.png";
+            match plot_action_counts(&ACTION_COUNTS, filename) {
+                Ok(_) => println!("Pie chart saved to {}", filename),
+                Err(e) => eprintln!("Error generating pie chart: {}", e),
+            }
         }
         // let avg_reward = agent.evaluate(&mut *env, episodes.try_into().unwrap());
         // println!("Average reward: {}", avg_reward);
 
-        // calculate_value();
+        calculate_value();
+
         // adjust_p_table();
         ret
     }
+}
+pub fn plot_reward_values() -> Result<(), Box<dyn std::error::Error>> {
+    let root = BitMapBackend::new("res/rewards.png", (640, 480)).into_drawing_area();
+    root.fill(&WHITE)?;
+
+    let mut chart = ChartBuilder::on(&root)
+        .caption("Reward Values Over Time", ("Arial", 20).into_font())
+        .margin(5)
+        .x_label_area_size(30)
+        .y_label_area_size(30)
+        .build_ranged(0f32..100f32, 0f32..100f32)?;
+
+    chart.configure_mesh().draw()?;
+
+    let reward_values = REWARD_VALUES.lock().unwrap();
+    let data: Vec<(f32, f32)> = (*reward_values)
+        .iter()
+        .enumerate()
+        .map(|(i, val)| (i as f32, *val as f32))
+        .collect();
+
+    chart.draw_series(LineSeries::new(data, &RED))?;
+
+    Ok(())
+}
+fn plot_action_counts(action_counts: &Mutex<HashMap<i32, i64>>, filename: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let action_counts = action_counts.lock().unwrap();
+
+    let root = BitMapBackend::new(filename, (640, 480)).into_drawing_area();
+    root.fill(&WHITE)?;
+
+    let mut chart = ChartBuilder::on(&root)
+        .caption("Action Counts", ("sans-serif", 50).into_font())
+        .build_cartesian_2d(0i32..(action_counts.len() as i32), 0i64..*action_counts.values().max().unwrap())?;
+
+    chart.configure_mesh().draw()?;
+
+    let total: i64 = action_counts.values().sum();
+    let mut idx = 0;
+    for (action, count) in action_counts.iter() {
+        chart.draw_series(std::iter::once(Rectangle::new(
+            [(idx, 0), (idx + 1, *count)],
+            *&Palette99::pick(*action as usize).filled(),
+        )))?;
+        idx += 1;
+    }
+
+    Ok(())
 }
 pub fn plot_loss_values(loss_values: &[f32]) -> Result<(), Box<dyn std::error::Error>> {
     let root = BitMapBackend::new("res/loss/new.png", (640, 480)).into_drawing_area();

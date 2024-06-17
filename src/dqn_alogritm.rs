@@ -4,17 +4,19 @@ use std::convert::TryInto;
 use std::error::Error;
 use std::sync::{Arc, Mutex};
 use std::vec::Vec;
+
 use bytes::Bytes;
 use csv::Reader;
-use indicatif::{ProgressBar, ProgressStyle};
 use lazy_static::lazy_static;
+use rand::prelude::IteratorRandom;
 use rand::Rng;
 use revm_primitives::{Env, U256};
-use tch::{Kind, nn, nn::Module, nn::Optimizer, nn::OptimizerConfig, Tensor};
+use tch::{Kind, nn, nn::Module, nn::Optimizer, nn::OptimizerConfig, no_grad, Tensor};
 use tch::nn::VarStore;
+
 use crate::evm::abi::BoxedABI;
 use crate::evm::input::{EVMInput, EVMInputTy};
-use crate::evm::LOSS_VALUES;
+use crate::evm::{ACTION_COUNTS, LOSS_VALUES, REWARD_VALUES};
 use crate::evm::mutator::AccessPattern;
 use crate::evm::types::EVMAddress;
 use crate::global_info::get_value;
@@ -54,9 +56,16 @@ lazy_static! {
     pub static ref GLOBAL_MUTATION: Mutex<i64> = Mutex::new(0);
 }
 
-pub fn set_global_mutation(value: i64) {
-    let mut global_mutation = GLOBAL_MUTATION.lock().unwrap();
-    *global_mutation = value;
+pub fn set_global_mutation(value: i32) {
+    // let mut global_mutation = GLOBAL_MUTATION.lock().unwrap();
+    // *global_mutation = value;
+    let nums = read_nums_from_csv("action.csv").unwrap();
+    let value_str= value.to_string();
+    let value_nums: Vec<i64> = nums.into_iter().filter(|num| num.to_string().starts_with(&value_str)).collect();
+    let len = value_nums.len();
+    let ran_idx= rand::thread_rng().gen_range(0..len);
+    let ran_value = value_nums[ran_idx];
+    *GLOBAL_MUTATION.lock().unwrap() = ran_value;
 }
 lazy_static! {
     pub static ref MUTATOR_SELECTION: Mutex<HashMap<&'static str, u8>> = {
@@ -120,14 +129,17 @@ fn read_nums_from_csv(file_path: &str) -> Result<Vec<i64>, Box<dyn Error>> {
 
     Ok(nums)
 }
-pub fn encode_actions() -> Vec<i64> {
-    let nums = read_nums_from_csv("action.csv").unwrap();
-    println!("长长------{}", nums.len());
-    let mut actions = ACTIONS.lock().unwrap();
-    for num in nums {
-        actions.push(num);
-    }
-    actions.clone()
+pub fn encode_actions() -> Vec<i32> {
+    // let nums = read_nums_from_csv("action.csv").unwrap();
+    // println!("长长------{}", nums.len());
+    // let mut actions = ACTIONS.lock().unwrap();
+    // for num in nums {
+    //     actions.push(num);
+    // }
+    // actions.clone()
+    let arr : [i32; 16] = [101, 102, 201, 202, 301, 302, 410, 421, 422, 510, 521, 522, 610, 620, 631, 632];
+    let vec = arr.to_vec();
+    vec
 }
 //state的设计和方法================================================================================================================
 pub struct State {
@@ -320,13 +332,15 @@ impl FuzzEnv {
         self.state = global_input;
         state.to_tensor()
     }
-    pub fn step_1(&mut self, action: i64) {
+    pub fn step_1(&mut self, action: i32) {
         set_global_mutation(action);
         set_mutator_selection();
     }
 
     pub fn step_2(&mut self) -> (Tensor, i64){
         let reward = get_value() as i64;
+        let mut reward_values = REWARD_VALUES.lock().unwrap();
+        reward_values.push(reward as i32);
         let global_input = get_global_input();
         let global_abi = global_input.get_data_abi().unwrap_or_else(|| {
             BoxedABI::default()
@@ -397,21 +411,71 @@ pub struct DqnNet {
     fc2: nn::Linear,
     fc3: nn::Linear,
     fc4: nn::Linear,
-    fc5: nn::Linear,
     vs: Arc<Mutex<VarStore>>,  // 存储神经网络参数的结构
 }
 
+
+fn kaiming_uniform_init(tensor: &mut Tensor, fan_in: i64) {
+    let bound = (2.0 / (fan_in as f64)).sqrt();
+    let mut tensor_clone = tensor.shallow_clone();
+    no_grad(|| {
+        let new_tensor = tensor_clone.uniform_(-bound, bound);
+        *tensor = new_tensor;
+    });
+
+}
+
+// Xavier initialization
+fn xavier_init(tensor: &mut Tensor, fan_in: i64, fan_out: i64) {
+    let bound = (6.0 / (fan_in as f64 + fan_out as f64)).sqrt();
+    let mut tensor_clone = tensor.shallow_clone();
+    no_grad(|| {
+        let new_tensor = tensor_clone.uniform_(-bound, bound);
+        *tensor = new_tensor;
+    });
+}
+
+// Zero initialization
+fn zero_init(tensor: &mut Tensor) {
+    no_grad(|| {
+        let new_tensor = tensor.fill_(0.0);
+        *tensor = new_tensor;
+    });
+}
 impl DqnNet {
-    pub fn new(vs: Arc<Mutex<nn::VarStore>>, input_dim: i64, output_dim: i64) -> DqnNet {
+    pub fn new(vs: Arc<Mutex<nn::VarStore>>, input_dim: i64, output_dim: i32) -> DqnNet {
         let vs_clone = Arc::clone(&vs);
         let mut vs = vs.lock().unwrap();
-        let fc1 = nn::linear(vs.root() / "fc1", input_dim, 256, Default::default());
-        let fc2 = nn::linear(vs.root() / "fc2", 256, 128, Default::default());
-        let fc3 = nn::linear(vs.root() / "fc3", 128, 64, Default::default());
-        let fc4 = nn::linear(vs.root() / "fc4", 64, 32, Default::default());
-        let fc5 = nn::linear(vs.root() / "fc5", 32, output_dim, Default::default());
-        DqnNet { fc1, fc2, fc3, fc4, fc5, vs: vs_clone }
+        let mut fc1 = nn::linear(vs.root() / "fc1", input_dim, 256, Default::default());
+        let mut fc2 = nn::linear(vs.root() / "fc2", 256, 128, Default::default());
+        let mut fc3 = nn::linear(vs.root() / "fc3", 128, 64, Default::default());
+        let mut fc4 = nn::linear(vs.root() / "fc5", 64, output_dim as i64, Default::default());
+
+        // Kaiming均匀初始化————默认使用这个初始化
+        // kaiming_uniform_init(&mut fc1.ws, input_dim);
+        // kaiming_uniform_init(&mut fc2.ws, 256);
+        // kaiming_uniform_init(&mut fc3.ws, 128);
+        // kaiming_uniform_init(&mut fc4.ws, 64);
+        // kaiming_uniform_init(&mut fc5.ws, 32);
+
+
+        // Xavier initialization---效果貌似变差了
+        // xavier_init(&mut fc1.ws, input_dim, 256);
+        // xavier_init(&mut fc2.ws, 256, 128);
+        // xavier_init(&mut fc3.ws, 128, 64);
+        // xavier_init(&mut fc4.ws, 64, 32);
+        // xavier_init(&mut fc5.ws, 32, output_dim);
+
+        // Or zero initialization---效果貌似变差了
+        // zero_init(&mut fc1.ws);
+        // zero_init(&mut fc2.ws);
+        // zero_init(&mut fc3.ws);
+        // zero_init(&mut fc4.ws);
+        // zero_init(&mut fc5.ws);
+
+        DqnNet { fc1, fc2, fc3, fc4, vs: vs_clone }
     }
+
 
     pub fn save(&self, path: &str) -> Result<(), Box<dyn Error>> {
         let vs = self.vs.lock().unwrap();
@@ -419,7 +483,7 @@ impl DqnNet {
         Ok(())
     }
 
-    pub fn load(vs: Arc<Mutex<nn::VarStore>>, path: &str, input_dim: i64, output_dim: i64) -> Result<DqnNet, Box<dyn Error>> {
+    pub fn load(vs: Arc<Mutex<nn::VarStore>>, path: &str, input_dim: i64, output_dim: i32) -> Result<DqnNet, Box<dyn Error>> {
         let vs_clone = Arc::clone(&vs);
         let mut vs = vs.lock().unwrap();
         vs.load(path)?;
@@ -434,23 +498,21 @@ impl DqnNet {
             .apply(&self.fc3)
             .relu()
             .apply(&self.fc4)
-            .relu()
-            .apply(&self.fc5)
     }
 }
 //DQNAgent=============================================================================================================
 pub struct DQNAgent {
     pub(crate) state_dim: i64,
-    pub(crate) action_dim: i64,
+    pub(crate) action_dim: i32,
     pub(crate) model: DqnNet,
     pub(crate) replay_buffer: ReplayBuffer,
     pub(crate) optimizer: Optimizer,
-    pub(crate) actions: Vec<i64>,
-    pub(crate) discount_factor: f32,//折扣因子
+    pub(crate) actions: Vec<i32>,
+    pub(crate) discount_factor: f32,
 }
 
 impl DQNAgent {
-    pub fn new(vs: Arc<Mutex<VarStore>>, state_dim: i64, action_dim: i64, replay_buffer_capacity: usize) -> DQNAgent {
+    pub fn new(vs: Arc<Mutex<VarStore>>, state_dim: i64, action_dim: i32, replay_buffer_capacity: usize) -> DQNAgent {
         // 加载模型
         // let vs_loaded = Arc::new(Mutex::new(nn::VarStore::new(tch::Device::Cpu)));
         // println!("我在读");
@@ -471,7 +533,6 @@ impl DQNAgent {
         //     }
         // };
         let model=DqnNet::new(vs.clone(), state_dim, action_dim);
-        // 创建不可变的 vs 副本以供优化器使用
         let optimizer_vs = vs.clone();
         let optimizer = nn::Adam::default().build(&mut optimizer_vs.lock().unwrap(), 1e-7).unwrap();
 
@@ -588,23 +649,29 @@ impl DQNAgent {
         Ok(())
     }
 
-    pub fn get_action(&mut self, state: &Tensor, epsilon: f64) -> (i64,i64) {
+    pub fn get_action(&mut self, state: &Tensor, epsilon: f64) -> (i32,i64) {
         //epsilon-greedy 策略：以一定的概率随机选择一个动作
         let mut rng = rand::thread_rng();
+        let action_index;
+        let action;
         if rng.gen::<f64>() < epsilon {
-            let action_index = rng.gen_range(0..self.actions.len());
-            let action = self.actions[action_index];
-            (action, action_index as i64)
+            action_index = rng.gen_range(0..self.actions.len());
+            action = self.actions[action_index];
         } else {
             // 使用模型对输入的状态进行前向传播，得到Q值
             let q_value = self.model.forward(&state.unsqueeze(0));
             // 使用argmax函数找到Q值中最大值的索引，这个索引就是最佳的动作
             // -1表示在最后一个维度上找最大值的索引；false表示不保持维度，即降维
             // let action = q_value.argmax(-1, false).int64_value(&[]);
-            let action_index = q_value.argmax(-1, false).int64_value(&[]);
-            let action_index = action_index as usize % self.actions.len();
-            let action = self.actions[action_index];
-            (action, action_index as i64)
+            action_index = q_value.argmax(-1, false).int64_value(&[]) as usize % self.actions.len();
+            action = self.actions[action_index];
+
         }
+        // Update the global action counts
+        let mut action_counts = ACTION_COUNTS.lock().unwrap();
+        let count = action_counts.entry(action).or_insert(0);
+        *count += 1;
+
+        (action, action_index as i64)
     }
 }

@@ -325,4 +325,3 @@ pub fn adjust_p_table() {
         }
     }
 }
-pub(crate) static MUTATE_SUCCESS_COUNT: AtomicUsize = AtomicUsize::new(0);

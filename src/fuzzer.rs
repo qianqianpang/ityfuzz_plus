@@ -12,7 +12,6 @@ use std::{
 };
 use std::sync::atomic::Ordering;
 use crate::global_info::{IS_OBJECTIVE, IS_CMP_INTERESTING, IS_DATAFLOW_INTERESTING, print_feedback_info, print_p_table};
-use crate::global_info::{MUTATE_SUCCESS_COUNT};
 use itertools::Itertools;
 use libafl::{
     fuzzer::Fuzzer,
@@ -43,15 +42,9 @@ use libafl_bolts::current_time;
 use serde::{de::DeserializeOwned, Serialize};
 use tracing::info;
 
-use crate::{
-    evm::{host::JMP_MAP, solution, utils::prettify_concise_inputs},
-    generic_vm::{vm_executor::MAP_SIZE, vm_state::VMStateT},
-    input::{ConciseSerde, SolutionTx, VMInputT},
-    minimizer::SequentialMinimizer,
-    oracle::BugMetadata,
-    scheduler::HasReportCorpus,
-    state::{HasCurrentInputIdx, HasExecutionResult, HasInfantStateState, HasItyState, InfantStateState},
-};
+use crate::{evm::{host::JMP_MAP, solution, utils::prettify_concise_inputs}, generic_vm::{vm_executor::MAP_SIZE, vm_state::VMStateT}, input::{ConciseSerde, SolutionTx, VMInputT}, main, minimizer::SequentialMinimizer, oracle::BugMetadata, RECURSION_COUNT, scheduler::HasReportCorpus, state::{HasCurrentInputIdx, HasExecutionResult, HasInfantStateState, HasItyState, InfantStateState}};
+use crate::evm::{FUZZ_MUTATION_COUNTS, MUTATE_SUCCESS_COUNT, SOLUTION_FLAG, XUNHUAN_FLAG};
+use crate::power_sched::plot_reward_values;
 
 pub static mut RUN_FOREVER: bool = false;
 pub static mut ORACLE_OUTPUT: Vec<serde_json::Value> = vec![];
@@ -274,7 +267,16 @@ for ItyFuzzer<VS, Loc, Addr, Out, CS, IS, F, IF, IFR, I, OF, S, OT, CI, SM>
                 .unwrap(),
         );
         loop {
+            let solution_flag_value = SOLUTION_FLAG.load(Ordering::SeqCst);
+            if solution_flag_value == 1{
+                return Err(libafl::Error::Unknown(String::from("Solution flag was set to 1"), Default::default()));
+            }
             self.fuzz_one(stages, executor, state, manager)?;
+            // if XUNHUAN_FLAG.load(Ordering::SeqCst) && RECURSION_COUNT.load(Ordering::SeqCst) <= 10 {
+            //     RECURSION_COUNT.fetch_add(1, Ordering::SeqCst);
+            //     println!("again----------------");
+            //     main();
+            // }
             manager.maybe_report_progress(state, reporting_interval)?;
         }
     }
@@ -567,12 +569,16 @@ for ItyFuzzer<VS, Loc, Addr, Out, CS, IS, F, IF, IFR, I, OF, S, OT, CI, SM>
                     .join("\n");
 
                 println!("\n\n\n😊😊 Found vulnerabilities! \n\n");
+                XUNHUAN_FLAG.store(true, Ordering::SeqCst);
                 // 获取当前的变异次数
-                let success_count = MUTATE_SUCCESS_COUNT.load(Ordering::SeqCst);
+                let success_count = MUTATE_SUCCESS_COUNT.load(std::sync::atomic::Ordering::SeqCst);
                 println!("变异了{}次",success_count);
+                let mut counts = FUZZ_MUTATION_COUNTS.lock().unwrap();
+                counts.push(success_count);
+                plot_reward_values();
 
 
-                print_p_table();
+                // print_p_table();
                 let cur_report =
                     format!(
                         "================ Description ================\n{}\n================ Trace ================\n{}\n",
@@ -604,7 +610,6 @@ for ItyFuzzer<VS, Loc, Addr, Out, CS, IS, F, IF, IFR, I, OF, S, OT, CI, SM>
                 #[cfg(feature = "print_txn_corpus")]
                 {
                     let vulns_dir = format!("{}/vulnerabilities", self.work_dir.as_str());
-
                     if !unsafe { REPLAY } {
                         let bug_idxs =
                             unsafe { ORACLE_OUTPUT.iter().map(|v| v["bug_idx"].as_u64().unwrap()).join(",") };
@@ -627,9 +632,9 @@ for ItyFuzzer<VS, Loc, Addr, Out, CS, IS, F, IF, IFR, I, OF, S, OT, CI, SM>
                     // dump_file!(state, vulns_dir, false);
                 }
 
-                if !unsafe { RUN_FOREVER } {
-                    exit(0);
-                }
+                // if !unsafe { RUN_FOREVER } {
+                //     exit(0);
+                // }
 
                 return Ok((res, None));
             }

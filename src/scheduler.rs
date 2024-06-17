@@ -234,7 +234,12 @@ where
             let data = state.metadata_map().get::<VoteData>().unwrap();
             #[cfg(feature = "full_trace")]
             {
-                corpus_size -= unsafe { REMOVED_CORPUS };
+                // corpus_size -= unsafe { REMOVED_CORPUS };
+                if unsafe { REMOVED_CORPUS } > corpus_size {
+                    corpus_size = 0;
+                } else {
+                    corpus_size -= unsafe { REMOVED_CORPUS };
+                }
             }
 
             // If the corpus is too large (> [`DROP_THRESHOLD`]), prune it

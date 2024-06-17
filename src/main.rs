@@ -63,7 +63,11 @@ enum Commands {
     #[cfg(feature = "sui_support")]
     Move(MoveArgs),
 }
+use std::cell::Cell;
+use std::sync::atomic::AtomicUsize;
 
+// 创建一个全局变量来存储递归调用的最大深度
+pub static RECURSION_COUNT: AtomicUsize = AtomicUsize::new(0);
 fn main() {
     init_sentry();
 
@@ -74,7 +78,10 @@ fn main() {
     #[cfg(not(debug_assertions))]
     let subscriber = subscriber_builder.with_max_level(Level::INFO).finish();
 
-    tracing::subscriber::set_global_default(subscriber).expect("failed to initialize logger");
+    // tracing::subscriber::set_global_default(subscriber).expect("failed to initialize logger");
+    tracing::subscriber::set_global_default(subscriber).unwrap_or_else(|_| {
+        tracing::warn!("Failed to initialize logger, but continuing execution.");
+    });
 
     let args = Cli::parse();
     match args.command {
