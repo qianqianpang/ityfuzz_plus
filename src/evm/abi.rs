@@ -1,3 +1,5 @@
+
+
 use std::{
     any::Any,
     collections::HashMap,
@@ -18,7 +20,7 @@ use once_cell::sync::Lazy;
 use revm_primitives::U256;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use tracing::debug;
-
+use crate::global_info::{increment_mutation_op, P_TABLE, RANDOM_P, select_mutation_action};
 use super::{
     types::checksum,
     utils::{colored_address, prettify_value},
@@ -36,6 +38,7 @@ use crate::{
     r#const::{EXPAND_CHOICE_MAX, MUTATE_CHOICE_MAX, RANDOM_ADDRESS_CHOICE, SAMPLE_MAX},
     state::{HasCaller, HasItyState},
 };
+use crate::dqn_alogritm::get_mutator_selection;
 
 /// Mapping from known signature to function name
 pub static mut FUNCTION_SIG: Lazy<HashMap<[u8; 4], String>> = Lazy::new(HashMap::new);
@@ -133,7 +136,7 @@ pub enum ABILossyType {
 
 /// Traits of ABI types (encoding, decoding, etc.)
 #[typetag::serde(tag = "type")]
-pub trait ABI: CloneABI {
+pub trait ABI: CloneABI + Send{
     /// Is the args static (i.e., fixed size)
     fn is_static(&self) -> bool;
     /// Get the ABI-encoded bytes of args
@@ -176,8 +179,8 @@ pub trait CloneABI {
 }
 
 impl<T> CloneABI for T
-where
-    T: ABI + Clone + 'static,
+    where
+        T: ABI + Clone + 'static,
 {
     fn clone_box(&self) -> Box<dyn ABI> {
         Box::new(self.clone())
@@ -289,7 +292,7 @@ impl BoxedABI {
             self.function.iter().map(|byte| Expr::const_byte(*byte)).collect_vec(),
             self.b.get_concolic(),
         ]
-        .concat()
+            .concat()
     }
 
     /// Set the bytes to args, used for decoding
@@ -313,12 +316,12 @@ impl BoxedABI {
 
 /// Randomly sample an args with any type with size `size`
 fn sample_abi<Loc, Addr, VS, S, CI>(state: &mut S, size: usize) -> BoxedABI
-where
-    S: State + HasRand + HasItyState<Loc, Addr, VS, CI> + HasMaxSize + HasCaller<EVMAddress>,
-    VS: VMStateT + Default,
-    Loc: Clone + Debug + Serialize + DeserializeOwned,
-    Addr: Clone + Debug + Serialize + DeserializeOwned,
-    CI: Serialize + DeserializeOwned + Debug + Clone + ConciseSerde,
+    where
+        S: State + HasRand + HasItyState<Loc, Addr, VS, CI> + HasMaxSize + HasCaller<EVMAddress>,
+        VS: VMStateT + Default,
+        Loc: Clone + Debug + Serialize + DeserializeOwned,
+        Addr: Clone + Debug + Serialize + DeserializeOwned,
+        CI: Serialize + DeserializeOwned + Debug + Clone + ConciseSerde,
 {
     // TODO(@shou): use a better sampling strategy
     if size == 32 {
@@ -377,14 +380,14 @@ where
 impl BoxedABI {
     /// Mutate the args
     pub fn mutate<Loc, Addr, VS, S, CI>(&mut self, state: &mut S) -> MutationResult
-    where
-        S: State + HasRand + HasMaxSize + HasItyState<Loc, Addr, VS, CI> + HasCaller<EVMAddress> + HasMetadata,
-        VS: VMStateT + Default,
-        Loc: Clone + Debug + Serialize + DeserializeOwned,
-        Addr: Clone + Debug + Serialize + DeserializeOwned,
-        CI: Serialize + DeserializeOwned + Debug + Clone + ConciseSerde,
+        where
+            S: State + HasRand + HasMaxSize + HasItyState<Loc, Addr, VS, CI> + HasCaller<EVMAddress> + HasMetadata,
+            VS: VMStateT + Default,
+            Loc: Clone + Debug + Serialize + DeserializeOwned,
+            Addr: Clone + Debug + Serialize + DeserializeOwned,
+            CI: Serialize + DeserializeOwned + Debug + Clone + ConciseSerde,
     {
-        self.mutate_with_vm_slots(state, None)
+        self.mutate_with_vm_slots_ptable(state, None)
     }
 
     /// Mutate the args and crossover with slots in the VM state
@@ -395,12 +398,12 @@ impl BoxedABI {
         state: &mut S,
         vm_slots: Option<HashMap<EVMU256, EVMU256>>,
     ) -> MutationResult
-    where
-        S: State + HasRand + HasMaxSize + HasItyState<Loc, Addr, VS, CI> + HasCaller<EVMAddress> + HasMetadata,
-        VS: VMStateT + Default,
-        Loc: Clone + Debug + Serialize + DeserializeOwned,
-        Addr: Clone + Debug + Serialize + DeserializeOwned,
-        CI: Serialize + DeserializeOwned + Debug + Clone + ConciseSerde,
+        where
+            S: State + HasRand + HasMaxSize + HasItyState<Loc, Addr, VS, CI> + HasCaller<EVMAddress> + HasMetadata,
+            VS: VMStateT + Default,
+            Loc: Clone + Debug + Serialize + DeserializeOwned,
+            Addr: Clone + Debug + Serialize + DeserializeOwned,
+            CI: Serialize + DeserializeOwned + Debug + Clone + ConciseSerde,
     {
         match self.get_type() {
             // no need to mutate empty args
@@ -484,6 +487,136 @@ impl BoxedABI {
                 } else {
                     a_unknown.concrete = sample_abi(state, a_unknown.size);
                     MutationResult::Mutated
+                }
+            }
+        }
+    }
+
+
+    pub fn mutate_with_vm_slots_ptable<Loc, Addr, VS, S, CI>(
+        &mut self,
+        state: &mut S,
+        vm_slots: Option<HashMap<EVMU256, EVMU256>>,
+    ) -> MutationResult
+        where
+            S: State + HasRand + HasMaxSize + HasItyState<Loc, Addr, VS, CI> + HasCaller<EVMAddress> + HasMetadata,
+            VS: VMStateT + Default,
+            Loc: Clone + Debug + Serialize + DeserializeOwned,
+            Addr: Clone + Debug + Serialize + DeserializeOwned,
+            CI: Serialize + DeserializeOwned + Debug + Clone + ConciseSerde,
+    {
+        let mutator_selection = get_mutator_selection();
+        let mutate_field = mutator_selection["3_mutate_field"];
+        let mutate_method = mutator_selection["4_mutate_method"];
+        match self.get_type() {
+            // no need to mutate empty args
+            TEmpty => MutationResult::Skipped,
+            // mutate static args
+            T256 => {
+                if mutate_field ==2{
+                    let v = self.b.deref_mut().as_any();
+                    let a256 = v.downcast_mut::<A256>().unwrap();
+                    if a256.dont_mutate {
+                        return MutationResult::Skipped;
+                    }
+                    unsafe {
+                        if a256.is_address {
+                            // 根据概率最大的操作选择变异动作
+                            if mutate_method ==1{
+                                increment_mutation_op("T256_ADDRESS", "T256_ADDRESS_RANDOM");
+                                a256.data = state.get_rand_address().0.to_vec();
+                                MutationResult::Mutated
+                            }else if mutate_method ==2{
+                                increment_mutation_op("T256_ADDRESS", "T256_ADDRESS_SELF");
+                                a256.data = [0; 20].to_vec();
+                                MutationResult::Mutated
+                            }else{
+                                return MutationResult::Skipped;
+                            }
+                        } else {
+                            byte_mutator(state, a256, vm_slots)
+                        }
+                    }
+                }else {
+                    return   MutationResult::Skipped;
+                }
+            }
+            // mutate dynamic args
+            TDynamic => {
+                if mutate_field ==3{
+                    let adyn = self.b.deref_mut().as_any().downcast_mut::<ADynamic>().unwrap();
+                    // self.b.downcast_ref::<A256>().unwrap().mutate(state);
+                    byte_mutator_with_expansion(state, adyn, vm_slots)
+                }
+                else {
+                    return   MutationResult::Skipped;
+                }
+            }
+            // mutate tuple/array args
+            TArray => {
+                if mutate_field ==4{
+                    let aarray = self.b.deref_mut().as_any().downcast_mut::<AArray>().unwrap();
+
+                    let data_len = aarray.data.len();
+                    if data_len == 0 {
+                        return MutationResult::Skipped;
+                    }
+                    if aarray.dynamic_size {
+                        if mutate_method ==1{
+                            increment_mutation_op("TARRAY_DYNAMIC", "TARRAY_DYNAMIC_RANDOM");
+                            let index: usize = state.rand_mut().next() as usize % data_len;
+                            let result = aarray.data[index].mutate_with_vm_slots(state, vm_slots);
+                            return result;
+                        }else if mutate_method ==2{
+                            increment_mutation_op("TARRAY_DYNAMIC", "TARRAY_DYNAMIC_INCREASE");
+                            // increase size
+                            if state.max_size() <= aarray.data.len() {
+                                return MutationResult::Skipped;
+                            }
+                            for _ in 0..state.rand_mut().next() as usize % state.max_size() {
+                                aarray.data.push(aarray.data[0].clone());
+                            }
+                        }else if mutate_method ==3{
+                            increment_mutation_op("TARRAY_DYNAMIC", "TARRAY_DYNAMIC_DECREASE");
+                            // decrease size
+                            if aarray.data.is_empty() {
+                                return MutationResult::Skipped;
+                            }
+                            let index: usize = state.rand_mut().next() as usize % data_len;
+                            aarray.data.remove(index);
+                        }else{
+                            return MutationResult::Skipped;
+                        }
+                    } else {
+                        let index: usize = state.rand_mut().next() as usize % data_len;
+                        return aarray.data[index].mutate_with_vm_slots(state, vm_slots);
+                    }
+                    MutationResult::Mutated
+                }
+                else{
+                    return  MutationResult::Skipped;
+                }
+            }
+            // mutate unknown args, may change the type
+            TUnknown => {
+                if mutate_field ==5{
+                    let a_unknown = self.b.deref_mut().as_any().downcast_mut::<AUnknown>().unwrap();
+                    if a_unknown.size == 0 {
+                        a_unknown.concrete = BoxedABI::new(Box::new(AEmpty {}));
+                        return MutationResult::Skipped;
+                    }
+                    if mutate_method ==1{
+                        increment_mutation_op("TUNKNOWN", "TUNKNOWN_SLOT");
+                        a_unknown.concrete.mutate_with_vm_slots_ptable(state, vm_slots)
+                    }else if mutate_method ==2{
+                        increment_mutation_op("TUNKNOWN", "TUNKNOWN_ABI");
+                        a_unknown.concrete = sample_abi(state, a_unknown.size);
+                        MutationResult::Mutated
+                    }else{
+                        return MutationResult::Skipped;
+                    }
+                }else{
+                    return  MutationResult::Skipped;
                 }
             }
         }
@@ -1164,7 +1297,7 @@ pub fn get_abi_type(abi_name: &str, with_address: &Option<Vec<u8>>) -> Box<dyn A
             data: vec![
                 BoxedABI {
                     b: get_abi_type(&abi_name[..abi_name_str.len() - 2], with_address),
-                    function: [0; 4]
+                    function: [0; 4],
                 };
                 1
             ],
@@ -1184,7 +1317,7 @@ pub fn get_abi_type(abi_name: &str, with_address: &Option<Vec<u8>>) -> Box<dyn A
             data: vec![
                 BoxedABI {
                     b: get_abi_type(&String::from(name), with_address),
-                    function: [0; 4]
+                    function: [0; 4],
                 };
                 len
             ],
@@ -1419,3 +1552,5 @@ mod tests {
         }
     }
 }
+
+

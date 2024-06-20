@@ -25,7 +25,6 @@ use libafl::{
         HasMetadata,
         Mutator,
         QwordAddMutator,
-        StdScheduledMutator,
         WordAddMutator,
         WordInterestingMutator,
     },
@@ -36,6 +35,8 @@ use libafl_bolts::{impl_serdeany, prelude::Rand, tuples::tuple_list, Named};
 use serde::{Deserialize, Serialize};
 
 use crate::{evm::types::EVMU256, r#const::MAX_STACK_POW};
+use crate::evm::types::EVMU256;
+use crate::sceduled_new::StdScheduledMutatorQQ;
 
 /// Constants in the contracts
 ///
@@ -445,14 +446,25 @@ where
     S: State + HasRand + HasMetadata,
     I: HasBytesVec + Input,
 {
+    //17
     let mutations = tuple_list!(
         BitFlipMutator::new(),
+        ByteFlipMutator::new(),
+        ByteIncMutator::new(),
+        ByteDecMutator::new(),
+        ByteNegMutator::new(),
+        ByteRandMutator::new(),
+        ByteAddMutator::new(),
+        WordAddMutator::new(),
+        DwordAddMutator::new(),
+        QwordAddMutator::new(),
         ByteInterestingMutator::new(),
         WordInterestingMutator::new(),
         DwordInterestingMutator::new(),
+        BytesSetMutator::new(),
+        BytesRandSetMutator::new(),
+        BytesSwapMutator::new(),
         ConstantHintedMutator::new(),
-        GaussianNoiseMutator::new(),
-        IncDecValue::new(),
     );
 
     if !state.has_metadata::<MutatorMetadata>() {
@@ -494,15 +506,25 @@ where
 {
     let mutations = tuple_list!(
         BitFlipMutator::new(),
+        ByteFlipMutator::new(),
+        ByteIncMutator::new(),
+        ByteDecMutator::new(),
+        ByteNegMutator::new(),
+        ByteRandMutator::new(),
+        ByteAddMutator::new(),
+        WordAddMutator::new(),
+        DwordAddMutator::new(),
+        QwordAddMutator::new(),
         ByteInterestingMutator::new(),
         WordInterestingMutator::new(),
         DwordInterestingMutator::new(),
         BytesExpandMutator::new(),
         BytesInsertMutator::new(),
         BytesRandInsertMutator::new(),
-        ConstantHintedMutator::new(),
-        GaussianNoiseMutator::new(),
-        IncDecValue::new(),
+        BytesSetMutator::new(),
+        BytesRandSetMutator::new(),
+        BytesCopyMutator::new(),
+        BytesSwapMutator::new(),
     );
 
     if !state.has_metadata::<MutatorMetadata>() {

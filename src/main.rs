@@ -27,6 +27,10 @@ pub mod tracer;
 
 #[cfg(feature = "sui_support")]
 pub mod r#move;
+mod global_info;
+mod sceduled_new;
+mod dqn_alogritm;
+mod drl;
 
 use clap::{Parser, Subcommand};
 use evm::{evm_main, EvmArgs};
@@ -58,7 +62,11 @@ enum Commands {
     #[cfg(feature = "sui_support")]
     Move(MoveArgs),
 }
+use std::cell::Cell;
+use std::sync::atomic::AtomicUsize;
 
+// 创建一个全局变量来存储递归调用的最大深度
+pub static RECURSION_COUNT: AtomicUsize = AtomicUsize::new(0);
 fn main() {
     init_sentry();
     logger::init();

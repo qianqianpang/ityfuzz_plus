@@ -26,6 +26,7 @@ use crate::{
     generic_vm::{vm_executor::GenericVM, vm_state::VMStateT},
     input::VMInputT,
 };
+
 pub struct ConcolicStage<OT> {
     pub enabled: bool,
     pub allow_symbolic_addresses: bool,
@@ -79,6 +80,7 @@ where
         manager: &mut EM,
         _corpus_idx: CorpusId,
     ) -> Result<(), Error> {
+        println!("==========================================================执行conclic stage perform====");
         if !self.enabled {
             return Ok(());
         }

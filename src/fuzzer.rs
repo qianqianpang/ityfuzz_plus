@@ -10,7 +10,8 @@ use std::{
     process::exit,
     time::Duration,
 };
-
+use std::sync::atomic::Ordering;
+use crate::global_info::{IS_OBJECTIVE, IS_CMP_INTERESTING, IS_DATAFLOW_INTERESTING, print_feedback_info, print_p_table};
 use itertools::Itertools;
 use libafl::{
     fuzzer::Fuzzer,
@@ -52,6 +53,9 @@ use crate::{
     scheduler::HasReportCorpus,
     state::{HasCurrentInputIdx, HasExecutionResult, HasInfantStateState, HasItyState, InfantStateState},
 };
+use crate::{evm::{host::JMP_MAP, solution, utils::prettify_concise_inputs}, generic_vm::{vm_executor::MAP_SIZE, vm_state::VMStateT}, input::{ConciseSerde, SolutionTx, VMInputT}, main, minimizer::SequentialMinimizer, oracle::BugMetadata, RECURSION_COUNT, scheduler::HasReportCorpus, state::{HasCurrentInputIdx, HasExecutionResult, HasInfantStateState, HasItyState, InfantStateState}};
+use crate::evm::{FUZZ_MUTATION_COUNTS, MUTATE_SUCCESS_COUNT, SOLUTION_FLAG, XUNHUAN_FLAG};
+use crate::power_sched::plot_reward_values;
 
 pub static mut RUN_FOREVER: bool = false;
 pub static mut ORACLE_OUTPUT: Vec<serde_json::Value> = vec![];
@@ -270,7 +274,8 @@ where
         executor: &mut E,
         state: &mut EM::State,
         manager: &mut EM,
-    ) -> Result<(), Error> {
+    ) -> Result<CorpusId, Error> {
+        println!("=======================开始fuzzloop==========================");
         // now report stats to manager every 1 sec
         let reporting_interval = Duration::from_millis(
             env::var("REPORTING_INTERVAL")
@@ -279,7 +284,16 @@ where
                 .unwrap(),
         );
         loop {
+            let solution_flag_value = SOLUTION_FLAG.load(Ordering::SeqCst);
+            if solution_flag_value == 1{
+                return Err(libafl::Error::Unknown(String::from("Solution flag was set to 1"), Default::default()));
+            }
             self.fuzz_one(stages, executor, state, manager)?;
+            // if XUNHUAN_FLAG.load(Ordering::SeqCst) && RECURSION_COUNT.load(Ordering::SeqCst) <= 10 {
+            //     RECURSION_COUNT.fetch_add(1, Ordering::SeqCst);
+            //     println!("again----------------");
+            //     main();
+            // }
             manager.maybe_report_progress(state, reporting_interval)?;
         }
     }
@@ -423,10 +437,18 @@ where
         let is_infant_interesting = self
             .infant_feedback
             .is_interesting(state, manager, &input, observers, &exitkind)?;
+        IS_CMP_INTERESTING.store(is_infant_interesting, Ordering::SeqCst);
 
         let is_solution = self
             .objective
             .is_interesting(state, manager, &input, observers, &exitkind)?;
+        IS_OBJECTIVE.store(is_solution, Ordering::SeqCst);
+
+
+        let is_infant_solution = self
+            .infant_result_feedback
+            .is_interesting(state, manager, &input, observers, &exitkind)?;
+        IS_DATAFLOW_INTERESTING.store(is_infant_solution, Ordering::SeqCst);
 
         // add the trace of the new state
         #[cfg(any(feature = "print_infant_corpus", feature = "print_txn_corpus"))]
@@ -546,6 +568,7 @@ where
             }
             // find the solution
             ExecuteInputResult::Solution => {
+                print_feedback_info();
                 state
                     .metadata_map_mut()
                     .get_mut::<BugMetadata>()
@@ -566,6 +589,16 @@ where
                     .join("\n");
 
                 println!("\n\n\n😊😊 Found vulnerabilities! \n\n");
+                XUNHUAN_FLAG.store(true, Ordering::SeqCst);
+                // 获取当前的变异次数
+                let success_count = MUTATE_SUCCESS_COUNT.load(std::sync::atomic::Ordering::SeqCst);
+                println!("变异了{}次",success_count);
+                let mut counts = FUZZ_MUTATION_COUNTS.lock().unwrap();
+                counts.push(success_count);
+                plot_reward_values();
+
+
+                // print_p_table();
                 let cur_report =
                     format!(
                     "================ Description ================\n{}\n================ Trace ================\n{}\n",
@@ -620,9 +653,9 @@ where
                     // dump_file!(state, vulns_dir, false);
                 }
 
-                if !unsafe { RUN_FOREVER } {
-                    exit(0);
-                }
+                // if !unsafe { RUN_FOREVER } {
+                //     exit(0);
+                // }
 
                 return Ok((res, None));
             }

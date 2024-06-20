@@ -3,14 +3,10 @@ use std::{cell::RefCell, collections::HashMap, fs::File, io::Read, ops::Deref, p
 use bytes::Bytes;
 use glob::glob;
 use itertools::Itertools;
-use libafl::{
-    feedbacks::Feedback,
-    prelude::{HasMetadata, MaxMapFeedback, SimpleEventManager, SimpleMonitor, StdMapObserver},
-    Evaluator,
-    Fuzzer,
-};
+use libafl::{feedbacks::Feedback, prelude::{HasMetadata, MaxMapFeedback, SimpleEventManager, SimpleMonitor, StdMapObserver}, Evaluator, Fuzzer, ExecuteInputResult};
 use libafl_bolts::tuples::tuple_list;
 use revm_primitives::Bytecode;
+use tch::nn;
 use tracing::{debug, error, info};
 
 use crate::{
@@ -69,6 +65,8 @@ use crate::{
     scheduler::SortedDroppingScheduler,
     state::{FuzzState, HasCaller, HasExecutionResult, HasPresets},
 };
+use crate::dqn_alogritm::{DQNAgent, FuzzEnv};
+use crate::global_info::{reset_p_table, reset_p_table2};
 
 #[allow(clippy::type_complexity)]
 pub fn evm_fuzzer(
@@ -532,6 +530,7 @@ pub fn evm_fuzzer(
     match config.replay_file {
         None => {
             // load initial corpus
+            //处理一组测试用例，并使用模糊测试器（fuzzer）对每个测试用例进行评估
             for testcase in testcases {
                 let mut vm_state = initial_vm_state.clone();
                 for txn in testcase {
@@ -556,9 +555,10 @@ pub fn evm_fuzzer(
             } else {
                 error!("{}", rv);
             }
-            exit(1);
+            // exit(1);
         }
         Some(_) => {
+            //回放测试
             unsafe {
                 EVAL_COVERAGE = true;
             }

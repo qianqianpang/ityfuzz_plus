@@ -1,13 +1,12 @@
 use std::{
-    cell::RefCell,
     collections::{HashMap, HashSet},
     fs::File,
     io::{Read, Write},
     ops::Deref,
     path::Path,
-    rc::Rc,
     time::Duration,
 };
+use std::sync::{Arc, Mutex};
 
 use bytes::Bytes;
 use hex;
@@ -39,7 +38,6 @@ use crate::{
         middlewares::cheatcode::CHEATCODE_ADDRESS,
         mutator::AccessPattern,
         onchain::{abi_decompiler::fetch_abi_heimdall, flashloan::register_borrow_txn, BLACKLIST_ADDR},
-        presets::Preset,
         types::{
             fixed_address,
             EVMAddress,
@@ -555,7 +553,7 @@ where
             txn_value: if abi.is_payable { Some(EVMU256::ZERO) } else { None },
             step: false,
             env: artifacts.initial_env.clone(),
-            access_pattern: Rc::new(RefCell::new(AccessPattern::new())),
+            access_pattern: Arc::new(Mutex::new(AccessPattern::new())),
             liquidation_percent: 0,
             input_type: EVMInputTy::ABI,
             direct_data: Default::default(),

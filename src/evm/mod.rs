@@ -25,7 +25,7 @@ pub mod tokens;
 pub mod types;
 pub mod utils;
 pub mod vm;
-
+use plotters::prelude::*;
 use std::{
     cell::RefCell,
     collections::{HashMap, HashSet},
@@ -57,6 +57,7 @@ use revm_primitives::B160;
 use serde::Deserialize;
 use serde_json::json;
 use tracing::debug;
+use tch::{Device, nn};
 use types::{EVMAddress, EVMFuzzState, EVMU256};
 use vm::EVMState;
 
@@ -477,6 +478,74 @@ impl OracleType {
     }
 }
 
+
+use lazy_static::lazy_static;
+use tch::nn::{OptimizerConfig, VarStore};
+use crate::dqn_alogritm::{DQNAgent, DqnNet, encode_actions, FuzzEnv, ReplayBuffer};
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+// 这些应该只初始化一次而不是每次perform都调用
+
+lazy_static! {
+    pub static ref STATE_DIM: Mutex<i32> = Mutex::new(4);
+    pub static ref ACTION_DIM: Mutex<i32> = Mutex::new(16);
+    pub static ref REPLAY_BUFFER_CAPACITY: Mutex<i32> = Mutex::new(10000);
+    pub static ref EPISODES: Mutex<i64> = Mutex::new(10000000000);
+    pub static ref BATCH_SIZE: Mutex<i32> = Mutex::new(256);
+
+    pub static ref ENV: Mutex<FuzzEnv> = Mutex::new(FuzzEnv::new());
+    pub static ref VS: Arc<Mutex<VarStore>> = Arc::new(Mutex::new(VarStore::new(Device::Cpu)));
+    pub static ref AGENT: Arc<Mutex<DQNAgent>> = Arc::new(Mutex::new(
+        DQNAgent::new(
+            VS.clone(),
+            (*STATE_DIM.lock().unwrap()).into(),
+            (*ACTION_DIM.lock().unwrap()).into(),
+            (*REPLAY_BUFFER_CAPACITY.lock().unwrap()).try_into().unwrap()
+        )
+    ));
+    pub static ref LOSS_VALUES: Mutex<Vec<f32>> = Mutex::new(Vec::new());
+    pub static ref REWARD_VALUES: Mutex<Vec<i32>> = Mutex::new(Vec::new());
+    pub static ref EPSILON: Mutex<f64> = Mutex::new(0.6);
+    pub static ref FINAL_EPSILON: Mutex<f64> = Mutex::new(0.01);
+    pub static ref EPSILON_DECAY: Mutex<f64> = Mutex::new(0.95);
+
+    pub static ref ACTION_COUNTS: Mutex<HashMap<i32, i64>> = Mutex::new(HashMap::new());
+    pub static ref XUNHUAN_FLAG: AtomicBool = AtomicBool::new(false);
+    // pub static ref GLOBAL_CONFIG: Mutex<Option<Config>> = Mutex::new(None);
+
+    static ref FUZZ_COUNT: AtomicUsize = AtomicUsize::new(0);
+    pub static ref SOLUTION_FLAG: AtomicUsize = AtomicUsize::new(0);
+
+    pub static ref FUZZ_MUTATION_COUNTS: Mutex<Vec<usize>> = Mutex::new(Vec::new());
+    pub static ref MUTATE_SUCCESS_COUNT: AtomicUsize = AtomicUsize::new(0);
+}
+
+
+
+fn plot_fuzz_mutation_counts() -> Result<(), Box<dyn std::error::Error>> {
+    let root = BitMapBackend::new("res/fuzz_mutation_counts.png", (640, 480)).into_drawing_area();
+    root.fill(&WHITE)?;
+
+    let counts = FUZZ_MUTATION_COUNTS.lock().unwrap();
+    let max_count = *counts.iter().max().unwrap_or(&0);
+
+    let mut chart = ChartBuilder::on(&root)
+        .caption("Fuzz Mutation Counts", ("sans-serif", 40).into_font())
+        .margin(5)
+        .x_label_area_size(30)
+        .y_label_area_size(30)
+        .build_ranged(0..counts.len(), 0..max_count)?;
+
+    chart.configure_mesh().draw()?;
+
+    chart.draw_series(LineSeries::new(
+        counts.iter().enumerate().map(|(x, y)| (x, *y)),
+        &RED,
+    ))?;
+
+    Ok(())
+}
 #[allow(clippy::type_complexity)]
 pub fn evm_main(mut args: EvmArgs) {
     args.setup_file = args.deployment_script;

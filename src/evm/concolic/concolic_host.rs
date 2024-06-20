@@ -14,7 +14,7 @@ use lazy_static::lazy_static;
 use libafl::schedulers::Scheduler;
 use revm_interpreter::Interpreter;
 use serde::{Deserialize, Serialize};
-use tracing::{debug, error};
+use tracing::{debug};
 use z3::{
     ast::{Ast, Bool, BV},
     Config,

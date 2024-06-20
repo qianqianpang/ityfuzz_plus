@@ -12,9 +12,6 @@ use libafl_bolts::{prelude::Rand, Named};
 use revm_interpreter::Interpreter;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
-use super::onchain::flashloan::CAN_LIQUIDATE;
-/// Mutator for EVM inputs
-use crate::evm::input::EVMInputT;
 use crate::{
     evm::{
         abi::ABIAddressToInstanceMap,
@@ -41,6 +38,13 @@ use crate::{
     },
     state::{HasCaller, HasItyState, HasPresets, InfantStateState},
 };
+use crate::dqn_alogritm::{get_mutator_selection, set_global_input};
+/// Mutator for EVM inputs
+use crate::evm::input::{EVMInput, EVMInputT};
+// use crate::dqn_alogritm::set_global_input;
+use crate::global_info::increment_mutation_op;
+
+use super::onchain::flashloan::CAN_LIQUIDATE;
 
 /// [`AccessPattern`] records the access pattern of the input during execution.
 /// This helps to determine what is needed to be fuzzed. For instance, we don't
@@ -62,23 +66,29 @@ pub struct AccessPattern {
     pub gas_limit: bool,
     pub chain_id: bool,
     pub basefee: bool,
+    pub difficulty: bool,
+    // pub limit_contract_code_size: bool,
 }
 
 impl AccessPattern {
     /// Create a new access pattern with all fields set to false
+    /// 将这些访问模式设置为true将增加实验的复杂性，因为它增加了实验的可能状态空间。
+    /// 这可能会使得实验更难以理解和控制，但也可能使得实验能够覆盖到更多的可能情况。
     pub fn new() -> Self {
         Self {
             balance: vec![],
-            caller: false,
-            call_value: false,
-            gas_price: false,
-            number: false,
-            coinbase: false,
-            timestamp: false,
-            prevrandao: false,
-            gas_limit: false,
+            caller: true,
+            call_value: true,
+            gas_price: true,
+            number: true,
+            coinbase: true,
+            timestamp: true,
+            prevrandao: true,
+            gas_limit: true,
             chain_id: false,
-            basefee: false,
+            basefee: true,
+            difficulty: true,
+            // limit_contract_code_size: false,
         }
     }
 
@@ -95,20 +105,41 @@ impl AccessPattern {
             0x45 => self.gas_limit = true,
             0x46 => self.chain_id = true,
             0x48 => self.basefee = true,
+            // 0x50 => self.difficulty = true,
+            // 0x52 => self.limit_contract_code_size = true,
             _ => {}
         }
+    }
+    pub fn to_u32(&self) -> u32 {
+        let mut result = 0;
+
+        if self.caller { result |= 1 << 0; }
+        if self.call_value { result |= 1 << 1; }
+        if self.gas_price { result |= 1 << 2; }
+        if self.number { result |= 1 << 3; }
+        if self.coinbase { result |= 1 << 4; }
+        if self.timestamp { result |= 1 << 5; }
+        if self.prevrandao { result |= 1 << 6; }
+        if self.gas_limit { result |= 1 << 7; }
+        if self.chain_id { result |= 1 << 8; }
+        if self.basefee { result |= 1 << 9; }
+        if self.difficulty { result |= 1 << 10; }
+        // balance长度值放在最后
+        result |= (self.balance.len() as u32) << 11;
+
+        result
     }
 }
 
 /// [`FuzzMutator`] is a mutator that mutates the input based on the ABI and
 /// access pattern
 pub struct FuzzMutator<VS, Loc, Addr, SC, CI>
-where
-    VS: Default + VMStateT,
-    SC: Scheduler<State = InfantStateState<Loc, Addr, VS, CI>>,
-    Addr: Serialize + DeserializeOwned + Debug + Clone,
-    Loc: Serialize + DeserializeOwned + Debug + Clone,
-    CI: Serialize + DeserializeOwned + Debug + Clone + ConciseSerde,
+    where
+        VS: Default + VMStateT,
+        SC: Scheduler<State=InfantStateState<Loc, Addr, VS, CI>>,
+        Addr: Serialize + DeserializeOwned + Debug + Clone,
+        Loc: Serialize + DeserializeOwned + Debug + Clone,
+        CI: Serialize + DeserializeOwned + Debug + Clone + ConciseSerde,
 {
     /// Scheduler for selecting the next VM state to use if we decide to mutate
     /// the VM state of the input
@@ -117,12 +148,12 @@ where
 }
 
 impl<VS, Loc, Addr, SC, CI> FuzzMutator<VS, Loc, Addr, SC, CI>
-where
-    VS: Default + VMStateT,
-    SC: Scheduler<State = InfantStateState<Loc, Addr, VS, CI>>,
-    Addr: Serialize + DeserializeOwned + Debug + Clone,
-    Loc: Serialize + DeserializeOwned + Debug + Clone,
-    CI: Serialize + DeserializeOwned + Debug + Clone + ConciseSerde,
+    where
+        VS: Default + VMStateT,
+        SC: Scheduler<State=InfantStateState<Loc, Addr, VS, CI>>,
+        Addr: Serialize + DeserializeOwned + Debug + Clone,
+        Loc: Serialize + DeserializeOwned + Debug + Clone,
+        CI: Serialize + DeserializeOwned + Debug + Clone + ConciseSerde,
 {
     /// Create a new [`FuzzMutator`] with the given scheduler
     pub fn new(infant_scheduler: SC) -> Self {
@@ -133,9 +164,9 @@ where
     }
 
     fn ensures_constraint<I, S>(input: &mut I, state: &mut S, new_vm_state: &VS, constraints: Vec<Constraint>) -> bool
-    where
-        I: VMInputT<VS, Loc, Addr, CI> + Input + EVMInputT,
-        S: State + HasRand + HasMaxSize + HasItyState<Loc, Addr, VS, CI> + HasCaller<Addr> + HasMetadata,
+        where
+            I: VMInputT<VS, Loc, Addr, CI> + Input + EVMInputT,
+            S: State + HasRand + HasMaxSize + HasItyState<Loc, Addr, VS, CI> + HasCaller<Addr> + HasMetadata,
     {
         // precheck
         for constraint in &constraints {
@@ -204,12 +235,12 @@ where
 }
 
 impl<VS, Loc, Addr, SC, CI> Named for FuzzMutator<VS, Loc, Addr, SC, CI>
-where
-    VS: Default + VMStateT,
-    SC: Scheduler<State = InfantStateState<Loc, Addr, VS, CI>>,
-    Addr: Serialize + DeserializeOwned + Debug + Clone,
-    Loc: Serialize + DeserializeOwned + Debug + Clone,
-    CI: Serialize + DeserializeOwned + Debug + Clone + ConciseSerde,
+    where
+        VS: Default + VMStateT,
+        SC: Scheduler<State=InfantStateState<Loc, Addr, VS, CI>>,
+        Addr: Serialize + DeserializeOwned + Debug + Clone,
+        Loc: Serialize + DeserializeOwned + Debug + Clone,
+        CI: Serialize + DeserializeOwned + Debug + Clone + ConciseSerde,
 {
     fn name(&self) -> &str {
         "FuzzMutator"
@@ -217,20 +248,19 @@ where
 }
 
 impl<VS, Loc, Addr, I, S, SC, CI> Mutator<I, S> for FuzzMutator<VS, Loc, Addr, SC, CI>
-where
-    I: VMInputT<VS, Loc, Addr, CI> + Input + EVMInputT,
-    S: State + HasRand + HasMaxSize + HasItyState<Loc, Addr, VS, CI> + HasCaller<Addr> + HasMetadata + HasPresets,
-    SC: Scheduler<State = InfantStateState<Loc, Addr, VS, CI>>,
-    VS: Default + VMStateT + EVMStateT,
-    Addr: PartialEq + Debug + Serialize + DeserializeOwned + Clone,
-    Loc: Serialize + DeserializeOwned + Debug + Clone,
-    CI: Serialize + DeserializeOwned + Debug + Clone + ConciseSerde,
+    where
+        I: VMInputT<VS, Loc, Addr, CI> + Input + EVMInputT,
+        S: State + HasRand + HasMaxSize + HasItyState<Loc, Addr, VS, CI> + HasCaller<Addr> + HasMetadata + HasPresets,
+        SC: Scheduler<State=InfantStateState<Loc, Addr, VS, CI>>,
+        VS: Default + VMStateT + EVMStateT,
+        Addr: PartialEq + Debug + Serialize + DeserializeOwned + Clone,
+        Loc: Serialize + DeserializeOwned + Debug + Clone,
+        CI: Serialize + DeserializeOwned + Debug + Clone + ConciseSerde, EVMInput: From<I>
 {
     /// Mutate the input
     #[allow(unused_assignments)]
-    fn mutate(&mut self, state: &mut S, input: &mut I, _stage_idx: i32) -> Result<MutationResult, Error> {
-        // if the VM state of the input is not initialized, swap it with a state
-        // initialized
+    fn  mutate(&mut self, state: &mut S, input: &mut I, _stage_idx: i32) -> Result<MutationResult, Error> {
+        set_global_input(input.clone().into());
         if !input.get_staged_state().initialized {
             let concrete = state.get_infant_state(&mut self.infant_scheduler).unwrap();
             input.set_staged_state(concrete.1, concrete.0);
