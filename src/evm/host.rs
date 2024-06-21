@@ -10,7 +10,6 @@ use std::{
     str::FromStr,
     sync::{Arc, RwLock},
     time::{SystemTime, UNIX_EPOCH},
-    sync::Arc,
 };
 use std::sync::Mutex;
 

@@ -5,7 +5,7 @@ use libafl::{
     mutators::MutationResult,
     prelude::{HasMaxSize, HasRand, Mutator, State},
     schedulers::Scheduler,
-    state::HasMetadata,
+    HasMetadata,
     Error,
 };
 use libafl_bolts::{prelude::Rand, Named};
@@ -266,22 +266,6 @@ impl<VS, Loc, Addr, I, S, SC, CI> Mutator<I, S> for FuzzMutator<VS, Loc, Addr, S
             input.set_staged_state(concrete.1, concrete.0);
         }
 
-        // use exploit template
-        if state.has_preset() && state.rand_mut().below(MUTATOR_SAMPLE_MAX) < EXPLOIT_PRESET_CHOICE {
-            // if flashloan_v2, we don't mutate if it's a borrow
-            if input.get_input_type() != Borrow {
-                match state.get_next_call() {
-                    Some((addr, abi)) => {
-                        input.set_contract_and_abi(addr, Some(abi));
-                        input.mutate(state);
-                        return Ok(MutationResult::Mutated);
-                    }
-                    None => {
-                        // debug!("cannot find next call");
-                    }
-                }
-            }
-        }
         // determine whether we should conduct havoc
         // (a sequence of mutations in batch vs single mutation)
         // let mut amount_of_args = input.get_data_abi().map(|abi|
@@ -300,59 +284,135 @@ impl<VS, Loc, Addr, I, S, SC, CI> Mutator<I, S> for FuzzMutator<VS, Loc, Addr, S
         };
 
         let mut mutated = false;
-
-        {
-            if !input.is_step() && state.rand_mut().below(MUTATOR_SAMPLE_MAX) < MUTATE_CALLER_CHOICE {
-                let old_idx = input.get_state_idx();
-                let (idx, new_state) = state.get_infant_state(&mut self.infant_scheduler).unwrap();
-                if idx != old_idx {
-                    if !state.has_caller(&input.get_caller()) {
-                        input.set_caller(state.get_rand_caller());
-                    }
-
-                    if Self::ensures_constraint(input, state, &new_state.state, new_state.state.get_constraints()) {
-                        mutated = true;
-                        input.set_staged_state(new_state, idx);
-                    }
-                }
-            }
-
-            if input.get_staged_state().state.has_post_execution() &&
-                !input.is_step() &&
-                state.rand_mut().below(MUTATOR_SAMPLE_MAX) < TURN_TO_STEP_CHOICE
-            {
-                macro_rules! turn_to_step {
-                    () => {
-                        input.set_step(true);
-                        // todo(@shou): move args into
-                        input.set_as_post_exec(input.get_state().get_post_execution_needed_len());
-                        for _ in 0..havoc_times - 1 {
-                            input.mutate(state);
-                        }
-                        mutated = true;
-                    };
-                }
-                if input.get_input_type() != Borrow {
-                    turn_to_step!();
-                }
-
-                return Ok(MutationResult::Mutated);
-            }
-        }
-
-        // mutate the input once
         let mut mutator = || -> MutationResult {
-            // if the input is a step input (resume execution from a control leak)
-            // we should not mutate the VM state, but only mutate the bytes
-            if input.is_step() {
-                let res = match state.rand_mut().below(MUTATOR_SAMPLE_MAX) {
-                    0..=LIQUIDATE_CHOICE => {
-                        // only when there are more than one liquidation path, we attempt to liquidate
-                        if unsafe { CAN_LIQUIDATE } {
+            let mutator_selection = get_mutator_selection();
+            match mutator_selection.get("0_mutate_mode") {
+                // use exploit template
+                Some(&1) => {
+                    if state.has_preset() {
+                        if input.get_input_type() != Borrow {
+                            match state.get_next_call() {
+                                Some((addr, abi)) => {
+                                    input.set_contract_and_abi(addr, Some(abi));
+                                    input.mutate(state)
+                                }
+                                None => { MutationResult::Skipped }
+                            }
+                        } else {
+                            MutationResult::Skipped
+                        }
+                    } else {
+                        MutationResult::Skipped
+                    }
+                }
+                Some(&2) => {
+                    //mutate state
+                    if !input.is_step() {
+                        let old_idx = input.get_state_idx();
+                        let (idx, new_state) = state.get_infant_state(&mut self.infant_scheduler).unwrap();
+                        if idx != old_idx {
+                            if !state.has_caller(&input.get_caller()) {
+                                input.set_caller(state.get_rand_caller());
+                            }
+
+                            if Self::ensures_constraint(input, state, &new_state.state, new_state.state.get_constraints()) {
+                                input.set_staged_state(new_state, idx);
+                                MutationResult::Mutated
+                            } else {
+                                MutationResult::Skipped
+                            }
+                        } else {
+                            MutationResult::Skipped
+                        }
+                    } else {
+                        MutationResult::Skipped
+                    }
+                }
+                Some(&3) => {
+                    //mutate data
+                    if input.get_staged_state().state.has_post_execution() && !input.is_step() {
+                        macro_rules! turn_to_step {
+                            () => {
+                                input.set_step(true);
+                                // todo(@shou): move args into
+                                input.set_as_post_exec(input.get_state().get_post_execution_needed_len());
+                                for _ in 0..havoc_times - 1 {
+                                    input.mutate(state);
+                                }
+                            };
+                        }
+                        if input.get_input_type() != Borrow {
+                            turn_to_step!();
+                            MutationResult::Mutated
+                        } else {
+                            MutationResult::Skipped
+                        }
+                    } else {
+                        MutationResult::Skipped
+                    }
+                }
+                Some(&4) => {
+                    //MUTATE_BYTE
+                    if input.is_step() {
+                        let res = match mutator_selection.get("1_mutate_method") {
+                            Some(&1) => {
+                                if unsafe { CAN_LIQUIDATE } {
+                                    let prev_percent = input.get_liquidation_percent();
+                                    input.set_liquidation_percent(if state.rand_mut().below(MUTATOR_SAMPLE_MAX) <
+                                        LIQ_PERCENT_CHOICE
+                                    {
+                                        LIQ_PERCENT
+                                    } else {
+                                        0
+                                    } as u8);
+                                    if prev_percent != input.get_liquidation_percent() {
+                                        MutationResult::Mutated
+                                    } else {
+                                        MutationResult::Skipped
+                                    }
+                                } else {
+                                    MutationResult::Skipped
+                                }
+                            }
+                            Some(&2) => {
+                                input.mutate(state)
+                            }
+                            _ => {
+                                MutationResult::Skipped
+                            }
+                        };
+                        input.set_txn_value(EVMU256::ZERO);
+                        return res;
+                    } else {
+                        MutationResult::Skipped
+                    }
+                }
+                Some(&5) => {
+                    //MUTATE_BORROW
+                    if input.get_input_type() == Borrow {
+                        let rand_u8 = state.rand_mut().below(255) as u8;
+                        return match mutator_selection.get("1_mutate_method") {
+                            Some(&1) => {
+                                input.set_randomness(vec![rand_u8; 1]);
+                                MutationResult::Mutated
+                            }
+                            Some(&2) => {
+                                input.mutate(state)
+                            }
+                            _ => {
+                                MutationResult::Skipped
+                            }
+                        };
+                    } else {
+                        MutationResult::Skipped
+                    }
+                }
+                Some(&6) => {
+                    //MUTATE_ALL
+                    match mutator_selection.get("1_mutate_method") {
+                        Some(&1) => {
                             let prev_percent = input.get_liquidation_percent();
-                            input.set_liquidation_percent(if state.rand_mut().below(MUTATOR_SAMPLE_MAX) <
-                                LIQ_PERCENT_CHOICE
-                            {
+                            input.set_liquidation_percent(if state.rand_mut().below(MUTATOR_SAMPLE_MAX) < LIQ_PERCENT_CHOICE {
                                 LIQ_PERCENT
                             } else {
                                 0
@@ -362,61 +422,27 @@ impl<VS, Loc, Addr, I, S, SC, CI> Mutator<I, S> for FuzzMutator<VS, Loc, Addr, S
                             } else {
                                 MutationResult::Skipped
                             }
-                        } else {
+                        }
+                        Some(&2) => {
+                            let rand_u8 = state.rand_mut().below(255) as u8;
+                            input.set_randomness(vec![rand_u8; 1]);
+                            MutationResult::Mutated
+                        }
+                        Some(&3) => {
+                            input.mutate(state)
+                        }
+                        _ => {
                             MutationResult::Skipped
                         }
                     }
-                    _ => input.mutate(state),
-                };
-                input.set_txn_value(EVMU256::ZERO);
-                return res;
-            }
-
-            // if the input is to borrow token, we should mutate the randomness
-            // (use to select the paths to buy token), VM state, and bytes
-            if input.get_input_type() == Borrow {
-                let rand_u8 = state.rand_mut().below(256) as u8;
-                return match state.rand_mut().below(MUTATOR_SAMPLE_MAX) {
-                    0..=RANDOMNESS_CHOICE => {
-                        // mutate the randomness
-                        input.set_randomness(vec![rand_u8; 1]);
-                        MutationResult::Mutated
-                    }
-                    // mutate the bytes
-                    _ => input.mutate(state),
-                };
-            }
-
-            // mutate the bytes or VM state or liquidation percent (percentage of token to
-            // liquidate) by default
-            match state.rand_mut().below(MUTATOR_SAMPLE_MAX) {
-                0..=LIQUIDATE_CHOICE => {
-                    let prev_percent = input.get_liquidation_percent();
-                    input.set_liquidation_percent(if state.rand_mut().below(MUTATOR_SAMPLE_MAX) < LIQ_PERCENT_CHOICE {
-                        LIQ_PERCENT
-                    } else {
-                        0
-                    } as u8);
-                    if prev_percent != input.get_liquidation_percent() {
-                        MutationResult::Mutated
-                    } else {
-                        MutationResult::Skipped
-                    }
                 }
-                LIQUIDATE_CHOICE..=RANDOMNESS_CHOICE_2 => {
-                    let rand_u8 = state.rand_mut().below(256) as u8;
-                    input.set_randomness(vec![rand_u8; 1]);
-                    MutationResult::Mutated
+                _ => {
+                    MutationResult::Skipped
                 }
-                _ => input.mutate(state),
             }
         };
 
-        let mut res = if mutated {
-            MutationResult::Mutated
-        } else {
-            MutationResult::Skipped
-        };
+        let mut res = MutationResult::Skipped;
         let mut tries = 0;
 
         // try to mutate the input for [`havoc_times`] times with MUTATION_RETRIES

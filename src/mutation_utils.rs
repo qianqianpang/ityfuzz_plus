@@ -31,11 +31,11 @@ use libafl::{
     state::{HasMaxSize, HasRand, State},
     Error,
 };
+use libafl::mutators::StdScheduledMutator;
 use libafl_bolts::{impl_serdeany, prelude::Rand, tuples::tuple_list, Named};
 use serde::{Deserialize, Serialize};
 
 use crate::{evm::types::EVMU256, r#const::MAX_STACK_POW};
-use crate::evm::types::EVMU256;
 use crate::sceduled_new::StdScheduledMutatorQQ;
 
 /// Constants in the contracts
@@ -473,14 +473,18 @@ where
 
     let mut res = MutationResult::Skipped;
     if let Some(vm_slots) = vm_slots {
-        let mut mutator = StdScheduledMutator::with_max_stack_pow(
-            (VMStateHintedMutator::new(&vm_slots), mutations),
-            MAX_STACK_POW as u64,
-        );
-        res = mutator.mutate(state, input, 0).unwrap()
+        // let mut mutator = StdScheduledMutator::with_max_stack_pow(
+        //     (VMStateHintedMutator::new(&vm_slots), mutations),
+        //     MAX_STACK_POW as u64,
+        // );
+        // res = mutator.mutate(state, input, 0).unwrap()
+        let mut mutator = StdScheduledMutatorQQ::new((VMStateHintedMutator::new(&vm_slots), mutations));
+        mutator.mutate(state, input, 0).unwrap()
     } else {
-        let mut mutator = StdScheduledMutator::with_max_stack_pow(mutations, MAX_STACK_POW as u64);
-        res = mutator.mutate(state, input, 0).unwrap()
+        // let mut mutator = StdScheduledMutator::with_max_stack_pow(mutations, MAX_STACK_POW as u64);
+        // res = mutator.mutate(state, input, 0).unwrap()
+        let mut mutator = StdScheduledMutatorQQ::new(mutations);
+        mutator.mutate(state, input, 0).unwrap()
     }
 
     state
@@ -533,14 +537,18 @@ where
 
     let mut res = MutationResult::Skipped;
     if let Some(vm_slots) = vm_slots {
-        let mut mutator = StdScheduledMutator::with_max_stack_pow(
-            (VMStateHintedMutator::new(&vm_slots), mutations),
-            MAX_STACK_POW as u64,
-        );
-        res = mutator.mutate(state, input, 0).unwrap();
+        // let mut mutator = StdScheduledMutator::with_max_stack_pow(
+        //     (VMStateHintedMutator::new(&vm_slots), mutations),
+        //     MAX_STACK_POW as u64,
+        // );
+        // res = mutator.mutate(state, input, 0).unwrap();
+        let mut mutator = StdScheduledMutatorQQ::new((VMStateHintedMutator::new(&vm_slots), mutations));
+        mutator.mutate(state, input, 0).unwrap()
     } else {
-        let mut mutator = StdScheduledMutator::with_max_stack_pow(mutations, MAX_STACK_POW as u64);
-        res = mutator.mutate(state, input, 0).unwrap();
+        // let mut mutator = StdScheduledMutator::with_max_stack_pow(mutations, MAX_STACK_POW as u64);
+        // res = mutator.mutate(state, input, 0).unwrap();
+        let mut mutator = StdScheduledMutatorQQ::new(mutations);
+        mutator.mutate(state, input, 0).unwrap()
     }
 
     state

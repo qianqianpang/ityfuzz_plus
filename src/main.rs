@@ -2,6 +2,7 @@
 #![feature(let_chains)]
 #![feature(unchecked_math)]
 #![feature(trait_alias)]
+#![feature(offset_of)]
 
 extern crate core;
 
@@ -67,6 +68,7 @@ use std::sync::atomic::AtomicUsize;
 
 // 创建一个全局变量来存储递归调用的最大深度
 pub static RECURSION_COUNT: AtomicUsize = AtomicUsize::new(0);
+
 fn main() {
     init_sentry();
     logger::init();

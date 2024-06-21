@@ -53,7 +53,6 @@ use crate::{
     scheduler::HasReportCorpus,
     state::{HasCurrentInputIdx, HasExecutionResult, HasInfantStateState, HasItyState, InfantStateState},
 };
-use crate::{evm::{host::JMP_MAP, solution, utils::prettify_concise_inputs}, generic_vm::{vm_executor::MAP_SIZE, vm_state::VMStateT}, input::{ConciseSerde, SolutionTx, VMInputT}, main, minimizer::SequentialMinimizer, oracle::BugMetadata, RECURSION_COUNT, scheduler::HasReportCorpus, state::{HasCurrentInputIdx, HasExecutionResult, HasInfantStateState, HasItyState, InfantStateState}};
 use crate::evm::{FUZZ_MUTATION_COUNTS, MUTATE_SUCCESS_COUNT, SOLUTION_FLAG, XUNHUAN_FLAG};
 use crate::power_sched::plot_reward_values;
 
