@@ -36,6 +36,7 @@ use libafl_bolts::{impl_serdeany, prelude::Rand, tuples::tuple_list, Named};
 use serde::{Deserialize, Serialize};
 
 use crate::{evm::types::EVMU256, r#const::MAX_STACK_POW};
+use crate::sceduled_new::StdScheduledMutatorQQ;
 
 /// Constants in the contracts
 ///
@@ -447,12 +448,22 @@ where
 {
     let mutations = tuple_list!(
         BitFlipMutator::new(),
+        ByteFlipMutator::new(),
+        ByteIncMutator::new(),
+        ByteDecMutator::new(),
+        ByteNegMutator::new(),
+        ByteRandMutator::new(),
+        ByteAddMutator::new(),
+        WordAddMutator::new(),
+        DwordAddMutator::new(),
+        QwordAddMutator::new(),
         ByteInterestingMutator::new(),
         WordInterestingMutator::new(),
         DwordInterestingMutator::new(),
+        BytesSetMutator::new(),
+        BytesRandSetMutator::new(),
+        BytesSwapMutator::new(),
         ConstantHintedMutator::new(),
-        GaussianNoiseMutator::new(),
-        IncDecValue::new(),
     );
 
     if !state.has_metadata::<MutatorMetadata>() {
@@ -460,24 +471,35 @@ where
     }
 
     let mut res = MutationResult::Skipped;
+    // if let Some(vm_slots) = vm_slots {
+    //     let mut mutator = StdScheduledMutator::with_max_stack_pow(
+    //         (VMStateHintedMutator::new(&vm_slots), mutations),
+    //         MAX_STACK_POW as u64,
+    //     );
+    //     res = mutator.mutate(state, input, 0).unwrap()
+    // } else {
+    //     let mut mutator = StdScheduledMutator::with_max_stack_pow(mutations, MAX_STACK_POW as u64);
+    //     res = mutator.mutate(state, input, 0).unwrap()
+    // }
+    //
+    // state
+    //     .metadata_map_mut()
+    //     .get_mut::<MutatorMetadata>()
+    //     .unwrap()
+    //     .set_full_overwrite_performed(false);
+    //
+    // res
     if let Some(vm_slots) = vm_slots {
-        let mut mutator = StdScheduledMutator::with_max_stack_pow(
-            (VMStateHintedMutator::new(&vm_slots), mutations),
-            MAX_STACK_POW as u64,
-        );
-        res = mutator.mutate(state, input, 0).unwrap()
+        // let mut mutator = StdScheduledMutator::new((VMStateHintedMutator::new(&vm_slots), mutations));
+        // mutator.mutate(state, input, 0).unwrap()
+        let mut mutator = StdScheduledMutatorQQ::new((VMStateHintedMutator::new(&vm_slots), mutations));
+        mutator.mutate(state, input, 0).unwrap()
     } else {
-        let mut mutator = StdScheduledMutator::with_max_stack_pow(mutations, MAX_STACK_POW as u64);
-        res = mutator.mutate(state, input, 0).unwrap()
+        // let mut mutator = StdScheduledMutator::new(mutations);
+        // mutator.mutate(state, input, 0).unwrap()
+        let mut mutator = StdScheduledMutatorQQ::new(mutations);
+        mutator.mutate(state, input, 0).unwrap()
     }
-
-    state
-        .metadata_map_mut()
-        .get_mut::<MutatorMetadata>()
-        .unwrap()
-        .set_full_overwrite_performed(false);
-
-    res
 }
 
 /// Mutator that mutates the `VARIABLE SIZE` input bytes (e.g., string) in
@@ -493,16 +515,26 @@ where
     I: HasBytesVec + Input,
 {
     let mutations = tuple_list!(
-        BitFlipMutator::new(),
+       BitFlipMutator::new(),
+        ByteFlipMutator::new(),
+        ByteIncMutator::new(),
+        ByteDecMutator::new(),
+        ByteNegMutator::new(),
+        ByteRandMutator::new(),
+        ByteAddMutator::new(),
+        WordAddMutator::new(),
+        DwordAddMutator::new(),
+        QwordAddMutator::new(),
         ByteInterestingMutator::new(),
         WordInterestingMutator::new(),
         DwordInterestingMutator::new(),
         BytesExpandMutator::new(),
         BytesInsertMutator::new(),
         BytesRandInsertMutator::new(),
-        ConstantHintedMutator::new(),
-        GaussianNoiseMutator::new(),
-        IncDecValue::new(),
+        BytesSetMutator::new(),
+        BytesRandSetMutator::new(),
+        BytesCopyMutator::new(),
+        BytesSwapMutator::new(),
     );
 
     if !state.has_metadata::<MutatorMetadata>() {
@@ -510,21 +542,32 @@ where
     }
 
     let mut res = MutationResult::Skipped;
+    // if let Some(vm_slots) = vm_slots {
+    //     let mut mutator = StdScheduledMutator::with_max_stack_pow(
+    //         (VMStateHintedMutator::new(&vm_slots), mutations),
+    //         MAX_STACK_POW as u64,
+    //     );
+    //     res = mutator.mutate(state, input, 0).unwrap();
+    // } else {
+    //     let mut mutator = StdScheduledMutator::with_max_stack_pow(mutations, MAX_STACK_POW as u64);
+    //     res = mutator.mutate(state, input, 0).unwrap();
+    // }
+    //
+    // state
+    //     .metadata_map_mut()
+    //     .get_mut::<MutatorMetadata>()
+    //     .unwrap()
+    //     .set_full_overwrite_performed(false);
+    // res
     if let Some(vm_slots) = vm_slots {
-        let mut mutator = StdScheduledMutator::with_max_stack_pow(
-            (VMStateHintedMutator::new(&vm_slots), mutations),
-            MAX_STACK_POW as u64,
-        );
-        res = mutator.mutate(state, input, 0).unwrap();
+        // let mut mutator = StdScheduledMutator::new((VMStateHintedMutator::new(&vm_slots), mutations));
+        // mutator.mutate(state, input, 0).unwrap()
+        let mut mutator = StdScheduledMutatorQQ::new((VMStateHintedMutator::new(&vm_slots), mutations));
+        mutator.mutate(state, input, 0).unwrap()
     } else {
-        let mut mutator = StdScheduledMutator::with_max_stack_pow(mutations, MAX_STACK_POW as u64);
-        res = mutator.mutate(state, input, 0).unwrap();
+        // let mut mutator = StdScheduledMutator::new(mutations);
+        // mutator.mutate(state, input, 0).unwrap()
+        let mut mutator = StdScheduledMutatorQQ::new(mutations);
+        mutator.mutate(state, input, 0).unwrap()
     }
-
-    state
-        .metadata_map_mut()
-        .get_mut::<MutatorMetadata>()
-        .unwrap()
-        .set_full_overwrite_performed(false);
-    res
 }

@@ -1,3 +1,5 @@
+use crate::global_info::print_p_table;
+use crate::global_info::MUTATE_SUCCESS_COUNT;
 use std::{
     collections::{hash_map::DefaultHasher, HashMap},
     env,
@@ -10,6 +12,7 @@ use std::{
     process::exit,
     time::Duration,
 };
+use std::sync::atomic::Ordering;
 
 use itertools::Itertools;
 use libafl::{
@@ -52,6 +55,7 @@ use crate::{
     scheduler::HasReportCorpus,
     state::{HasCurrentInputIdx, HasExecutionResult, HasInfantStateState, HasItyState, InfantStateState},
 };
+use crate::global_info::{IS_CMP_INTERESTING, IS_DATAFLOW_INTERESTING, IS_OBJECTIVE};
 
 pub static mut RUN_FOREVER: bool = false;
 pub static mut ORACLE_OUTPUT: Vec<serde_json::Value> = vec![];
@@ -271,6 +275,7 @@ where
         state: &mut EM::State,
         manager: &mut EM,
     ) -> Result<(), Error> {
+        println!("=======================开始fuzzloop==========================");
         // now report stats to manager every 1 sec
         let reporting_interval = Duration::from_millis(
             env::var("REPORTING_INTERVAL")
@@ -423,10 +428,17 @@ where
         let is_infant_interesting = self
             .infant_feedback
             .is_interesting(state, manager, &input, observers, &exitkind)?;
+        IS_CMP_INTERESTING.store(is_infant_interesting, Ordering::SeqCst);
 
         let is_solution = self
             .objective
             .is_interesting(state, manager, &input, observers, &exitkind)?;
+        IS_OBJECTIVE.store(is_solution, Ordering::SeqCst);
+
+        let is_infant_solution = self
+            .infant_result_feedback
+            .is_interesting(state, manager, &input, observers, &exitkind)?;
+        IS_DATAFLOW_INTERESTING.store(is_infant_solution, Ordering::SeqCst);
 
         // add the trace of the new state
         #[cfg(any(feature = "print_infant_corpus", feature = "print_txn_corpus"))]
@@ -566,6 +578,11 @@ where
                     .join("\n");
 
                 println!("\n\n\n😊😊 Found vulnerabilities! \n\n");
+                // 获取当前的变异次数
+                let success_count = MUTATE_SUCCESS_COUNT.load(Ordering::SeqCst);
+                 println!("变异了{}次",success_count);
+                print_p_table();
+
                 let cur_report =
                     format!(
                     "================ Description ================\n{}\n================ Trace ================\n{}\n",

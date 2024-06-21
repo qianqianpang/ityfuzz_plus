@@ -1,7 +1,11 @@
 use std::{cell::RefCell, collections::HashMap, fmt::Debug, ops::Deref, rc::Rc};
+use std::collections::HashSet;
+use std::sync::Mutex;
+use alloy_primitives::U256;
 
 use bytes::Bytes;
 use colored::{ColoredString, Colorize};
+use lazy_static::lazy_static;
 use libafl::{
     inputs::Input,
     mutators::MutationResult,
@@ -31,7 +35,16 @@ use crate::{
     state::{HasCaller, HasItyState},
     state_input::StagedVMState,
 };
+use crate::global_info::{increment_mutation_op, P_TABLE, RANDOM_P, select_mutation_action};
 
+// 创建一个全局的池来存储所有的变异值
+lazy_static! {
+    static ref BASEFEE_POOL: Mutex<HashSet<EVMU256>> = Mutex::new(HashSet::new());
+    static ref TIMESTAMP_POOL: Mutex<HashSet<EVMU256>> = Mutex::new(HashSet::new());
+    static ref COINBASE_POOL: Mutex<HashSet<EVMAddress>> = Mutex::new(HashSet::new());
+    static ref GAS_LIMIT_POOL: Mutex<HashSet<EVMU256>> = Mutex::new(HashSet::new());
+    static ref NUMBER_POOL: Mutex<HashSet<EVMU256>> = Mutex::new(HashSet::new());
+}
 /// EVM Input Types
 #[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug, Default)]
 pub enum EVMInputTy {
@@ -697,11 +710,23 @@ impl EVMInputT for EVMInput {
 
 ///
 macro_rules! impl_env_mutator_u256 {
-    ($item: ident, $loc: ident, $increasing_only: expr) => {
+    ($item: ident, $loc: ident, $increasing_only: expr, $pool: ident) => {
         pub fn $item<S>(input: &mut EVMInput, state_: &mut S) -> MutationResult
         where
             S: State + HasCaller<EVMAddress> + HasRand + HasMetadata,
         {
+            // println!("新方法——变异  number gas_limit timestamp basefee");
+            let mut pool = $pool.lock().unwrap();
+
+            // 有概率直接用pool中的值替换
+            if  !pool.is_empty() && state_.rand_mut().below(100) < 50 {
+                // println!("新方法——使用了观察到的pool值变异");
+                let idx = state_.rand_mut().below(pool.len() as u64);
+                let val = pool.iter().nth(idx as usize).unwrap().clone();
+                input.get_vm_env_mut().$loc.$item = val;
+                return MutationResult::Mutated;
+            }
+
             let vm_slots = if let Some(s) = input.get_state().get(&input.get_contract()) {
                 Some(s.clone())
             } else {
@@ -721,6 +746,9 @@ macro_rules! impl_env_mutator_u256 {
                 }
             }
 
+            // 将新的值添加到池中
+            pool.insert(result_val.clone());
+
             input.get_vm_env_mut().$loc.$item = result_val;
             res
         }
@@ -728,17 +756,31 @@ macro_rules! impl_env_mutator_u256 {
 }
 
 macro_rules! impl_env_mutator_h160 {
-    ($item: ident, $loc: ident) => {
+    ($item: ident, $loc: ident, $pool: ident) => {
         pub fn $item<S>(input: &mut EVMInput, state_: &mut S) -> MutationResult
         where
             S: State + HasCaller<EVMAddress> + HasRand,
         {
+            let mut pool = $pool.lock().unwrap();
+
+            // 有概率直接用pool中的值替换
+            if !pool.is_empty() && state_.rand_mut().below(100) < 50 {
+                // println!("新方法——使用了观察到的pool值变异");
+                let idx = state_.rand_mut().below(pool.len() as u64);
+                let val = pool.iter().nth(idx as usize).unwrap().clone();
+                input.get_vm_env_mut().$loc.$item = val;
+                return MutationResult::Mutated;
+            }
+
             let addr = state_.get_rand_caller();
             if addr == input.get_caller() {
                 return MutationResult::Skipped;
             } else {
+                // 将新的值添加到池中
+                pool.insert(addr.clone());
+
                 input.get_vm_env_mut().$loc.$item = addr;
-                MutationResult::Mutated
+                return MutationResult::Mutated;
             }
         }
     };
@@ -795,39 +837,81 @@ impl<'a> HasBytesVec for MutatorInput<'a> {
 }
 
 impl EVMInput {
-    impl_env_mutator_u256!(basefee, block, false);
-    impl_env_mutator_u256!(timestamp, block, true);
-    impl_env_mutator_h160!(coinbase, block);
-    impl_env_mutator_u256!(gas_limit, block, false);
-    impl_env_mutator_u256!(number, block, true);
+    impl_env_mutator_u256!(basefee, block, false, BASEFEE_POOL);
+    impl_env_mutator_u256!(timestamp, block, true, TIMESTAMP_POOL);
+    impl_env_mutator_h160!(coinbase, block, COINBASE_POOL);
+    impl_env_mutator_u256!(gas_limit, block, false, GAS_LIMIT_POOL);
+    impl_env_mutator_u256!(number, block, true, NUMBER_POOL);
     // impl_env_mutator_u256!(chain_id, cfg, false);
 
-    pub fn prevrandao<S>(_input: &mut EVMInput, _state_: &mut S) -> MutationResult
-    where
-        S: State + HasCaller<EVMAddress> + HasRand + HasMetadata,
+    pub fn prevrandao<S>(input: &mut EVMInput, state_: &mut S) -> MutationResult
+        where
+            S: State + HasCaller<EVMAddress> + HasRand + HasMetadata,
     {
         // not supported yet
-        // unreachable!();
-        MutationResult::Skipped
+        // unreachable!();这样变异是否合适
+        // println!("新方法——使用了prevrandao变异");
+        let new_difficulty = state_.rand_mut().below(1000); // Adjust the range as needed
+        input.get_vm_env_mut().block.difficulty = EVMU256::from(new_difficulty);
+
+        MutationResult::Mutated
     }
 
-    pub fn gas_price<S>(_input: &mut EVMInput, _state_: &mut S) -> MutationResult
-    where
-        S: State + HasCaller<EVMAddress> + HasRand + HasMetadata,
+    pub fn gas_price<S>(_input: &mut EVMInput, state_: &mut S) -> MutationResult
+        where
+            S: State + HasCaller<EVMAddress> + HasRand + HasMetadata,
     {
         // not supported yet
         // unreachable!();
-        MutationResult::Skipped
+        // println!("新方法——使用了gas price变异");
+        // 原来的值*0-2之间的数
+        let current_gas_price = _input.get_vm_env().tx.gas_price;
+        let rand_factor_u64 = state_.rand_mut().below(20);
+        let rand_factor_u256 = U256::from(rand_factor_u64);
+        let temp = U256::from(100);
+        let new_gas_price = ((current_gas_price) * (rand_factor_u256)) / temp;
+        _input.get_vm_env_mut().tx.gas_price = new_gas_price.into();
+
+        MutationResult::Mutated
     }
 
-    pub fn balance<S>(_input: &mut EVMInput, _state_: &mut S) -> MutationResult
-    where
-        S: State + HasCaller<EVMAddress> + HasRand + HasMetadata,
+    pub fn balance<S>(input: &mut EVMInput, state_: &mut S) -> MutationResult
+        where
+            S: State + HasCaller<EVMAddress> + HasRand + HasMetadata,
     {
+
         // not supported yet
         // unreachable!();
-        MutationResult::Skipped
+        // println!("新方法——使用了balance变异");
+        let current_balance = input.get_vm_env().tx.value;
+        let rand_factor_u64 = state_.rand_mut().below(20);
+        let rand_factor_u256 = U256::from(rand_factor_u64);
+        let temp = U256::from(100);
+        let new_balance = ((current_balance) * (rand_factor_u256)) / temp;
+        input.get_vm_env_mut().tx.value = new_balance.into();
+
+        MutationResult::Mutated
     }
+
+    pub fn difficulty<S>(input: &mut EVMInput, state_: &mut S) -> MutationResult
+        where
+            S: State + HasCaller<EVMAddress> + HasRand + HasMetadata,
+    {
+        // println!("新方法——使用了diffculty变异");
+        let new_difficulty = state_.rand_mut().below(1000);
+        input.get_vm_env_mut().block.difficulty = EVMU256::from(new_difficulty);
+        MutationResult::Mutated
+    }
+
+    // pub fn limit_contract_code_size<S>(input: &mut EVMInput, state_: &mut S) -> MutationResult
+    //     where
+    //         S: State + HasCaller<EVMAddress> + HasRand + HasMetadata,
+    // {
+    //     println!("新方法——使用了limit_contract_code_size变异");
+    //     let new_size_limit = state_.rand_mut().below(10000);
+    //     input.get_vm_env_mut().cfg.limit_contract_code_size = Option::from(new_size_limit as usize);
+    //     MutationResult::Mutated
+    // }
 
     pub fn caller<S>(input: &mut EVMInput, state_: &mut S) -> MutationResult
     where
@@ -864,21 +948,26 @@ impl EVMInput {
     }
 
     pub fn mutate_env_with_access_pattern<S>(&mut self, state: &mut S) -> MutationResult
-    where
-        S: State + HasCaller<EVMAddress> + HasRand + HasMetadata,
+        where
+            S: State + HasCaller<EVMAddress> + HasRand + HasMetadata,
     {
         let ap = self.get_access_pattern().deref().borrow().clone();
         let mut mutators = vec![];
+        let mut mutators_name: Vec<&'static str> = Vec::new();
         macro_rules! add_mutator {
             ($item: ident) => {
                 if ap.$item {
+                    // println!("{}_{} ", mutators.len(),stringify!($item));
                     mutators.push(&EVMInput::$item as &dyn Fn(&mut EVMInput, &mut S) -> MutationResult);
+                    mutators_name.push(stringify!($item));
                 }
             };
 
             ($item: ident, $cond: expr) => {
                 if $cond {
+                    // println!("{}_{} ", mutators.len(),stringify!($item));
                     mutators.push(&EVMInput::$item as &dyn Fn(&mut EVMInput, &mut S) -> MutationResult);
+                    mutators_name.push(stringify!($item));
                 }
             };
         }
@@ -895,13 +984,98 @@ impl EVMInput {
         add_mutator!(number);
         // add_mutator!(chain_id);
         add_mutator!(prevrandao);
+        add_mutator!(difficulty);
+        // add_mutator!(limit_contract_code_size);
 
         if mutators.is_empty() {
             return MutationResult::Skipped;
         }
 
-        let mutator = mutators[state.rand_mut().below(mutators.len() as u64) as usize];
-        mutator(self, state)
+        // let mutator = mutators[state.rand_mut().below(mutators.len() as u64) as usize];
+        // mutator(self, state)
+        //重写选择mutator
+        let selected_mutator_name = select_mutation_action(&P_TABLE, "ENV", unsafe { RANDOM_P });
+        match selected_mutator_name {
+            "ENV_CALLER" =>{
+                increment_mutation_op("ENV", "ENV_CALLER");
+                let idx = mutators_name.iter().position(|&r| r == "caller").unwrap();
+                let mutator = mutators[idx];
+                mutator(self, state)
+            },
+            "ENV_BALANCE" => {
+                increment_mutation_op("ENV", "ENV_BALANCE");
+                match mutators_name.iter().position(|&r| r == "balance") {
+                    Some(idx) => {
+                        let mutator = mutators[idx];
+                        mutator(self, state)
+                    },
+                    None => {
+                        self.mutate_env_with_access_pattern(state)
+                    }
+                }
+            },
+            "ENV_GASPRICE" => {
+                increment_mutation_op("ENV", "ENV_GASPRICE");
+                let idx = mutators_name.iter().position(|&r| r == "gas_price").unwrap();
+                let mutator = mutators[idx];
+                mutator(self, state)
+            },
+            "ENV_BASEFEE" => {
+                increment_mutation_op("ENV", "ENV_BASEFEE");
+                let idx = mutators_name.iter().position(|&r| r == "basefee").unwrap();
+                let mutator = mutators[idx];
+                mutator(self, state)
+            },
+            "ENV_TIMESTAMP" =>{
+                increment_mutation_op("ENV", "ENV_TIMESTAMP");
+                let idx = mutators_name.iter().position(|&r| r == "timestamp").unwrap();
+                let mutator = mutators[idx];
+                mutator(self, state)
+            },
+            "ENV_COINBASE" => {
+                increment_mutation_op("ENV", "ENV_COINBASE");
+                let idx = mutators_name.iter().position(|&r| r == "coinbase").unwrap();
+                let mutator = mutators[idx];
+                mutator(self, state)
+            },
+            "ENV_GASLIMIT" => {
+                increment_mutation_op("ENV", "ENV_GASLIMIT");
+                let idx = mutators_name.iter().position(|&r| r == "gas_limit").unwrap();
+                let mutator = mutators[idx];
+                mutator(self, state)
+            },
+            "ENV_NUMBER" => {
+                increment_mutation_op("ENV", "ENV_NUMBER");
+                let idx = mutators_name.iter().position(|&r| r == "number").unwrap();
+                let mutator = mutators[idx];
+                mutator(self, state)
+            },
+            "ENV_CALLVALUE" => {
+                increment_mutation_op("ENV", "ENV_CALLVALUE");
+                match mutators_name.iter().position(|&r| r == "call_value") {
+                    Some(idx) => {
+                        let mutator = mutators[idx];
+                        mutator(self, state)
+                    },
+                    None => {
+                        self.mutate_env_with_access_pattern(state)
+                    }
+                }
+            },
+            "ENV_PREVRANDAO" => {
+                increment_mutation_op("ENV", "ENV_PREVRANDAO");
+                let idx = mutators_name.iter().position(|&r| r == "prevrandao").unwrap();
+                let mutator = mutators[idx];
+                mutator(self, state)
+            },
+            "ENV_DIFFICULTY" => {
+                increment_mutation_op("ENV", "ENV_DIFFICULTY");
+                let idx = mutators_name.iter().position(|&r| r == "difficulty").unwrap();
+                let mutator = mutators[idx];
+                mutator(self, state)
+            },
+            _ => { unreachable!()}
+        }
     }
 }
 
@@ -982,22 +1156,42 @@ impl ConciseSerde for ConciseEVMInput {
 
 impl VMInputT<EVMState, EVMAddress, EVMAddress, ConciseEVMInput> for EVMInput {
     fn mutate<S>(&mut self, state: &mut S) -> MutationResult
-    where
-        S: State
+        where
+            S: State
             + HasRand
             + HasMaxSize
             + HasItyState<EVMAddress, EVMAddress, EVMState, ConciseEVMInput>
             + HasCaller<EVMAddress>
             + HasMetadata,
     {
-        if state.rand_mut().next() % 100 > 87 || self.data.is_none() {
-            return self.mutate_env_with_access_pattern(state);
+        let action = select_mutation_action(&P_TABLE, "INPUT_MUTATE", unsafe { RANDOM_P });
+        match action {
+            "INPUT_MUTATE_ENV" => {
+                increment_mutation_op("INPUT_MUTATE", "INPUT_MUTATE_ENV");
+                return self.mutate_env_with_access_pattern(state);
+            }
+            "INPUT_MUTATE_ARGS" => {
+                increment_mutation_op("INPUT_MUTATE", "INPUT_MUTATE_ARGS");
+                let vm_slots = self.get_state().get(&self.get_contract()).cloned();
+                match self.data {
+                    // Some(ref mut data) => data.mutate_with_vm_slots(state, vm_slots),
+                    Some(ref mut data) => data.mutate_with_vm_slots(state, vm_slots),
+                    None => MutationResult::Skipped,
+                }
+            }
+            _ => {
+                unreachable!();
+            }
         }
-        let vm_slots = self.get_state().get(&self.get_contract()).cloned();
-        match self.data {
-            Some(ref mut data) => data.mutate_with_vm_slots(state, vm_slots),
-            None => MutationResult::Skipped,
-        }
+        // if state.rand_mut().next() % 100 > 87 || self.data.is_none() {
+        //     return self.mutate_env_with_access_pattern(state);
+        // }
+        // let vm_slots = self.get_state().get(&self.get_contract()).cloned();
+        // match self.data {
+        //     // Some(ref mut data) => data.mutate_with_vm_slots(state, vm_slots),
+        //     Some(ref mut data) => data.mutate_with_vm_slots_ptable(state, vm_slots),
+        //     None => MutationResult::Skipped,
+        // }
     }
 
     fn get_caller_mut(&mut self) -> &mut EVMAddress {

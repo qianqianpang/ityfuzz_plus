@@ -41,6 +41,7 @@ use crate::{
     },
     state::{HasCaller, HasItyState, HasPresets, InfantStateState},
 };
+use crate::global_info::{increment_mutation_op, P_TABLE, RANDOM_P, select_mutation_action};
 
 /// [`AccessPattern`] records the access pattern of the input during execution.
 /// This helps to determine what is needed to be fuzzed. For instance, we don't
@@ -62,6 +63,7 @@ pub struct AccessPattern {
     pub gas_limit: bool,
     pub chain_id: bool,
     pub basefee: bool,
+    pub difficulty: bool,
 }
 
 impl AccessPattern {
@@ -69,16 +71,17 @@ impl AccessPattern {
     pub fn new() -> Self {
         Self {
             balance: vec![],
-            caller: false,
-            call_value: false,
-            gas_price: false,
-            number: false,
-            coinbase: false,
-            timestamp: false,
-            prevrandao: false,
-            gas_limit: false,
+            caller: true,
+            call_value: true,
+            gas_price: true,
+            number: true,
+            coinbase: true,
+            timestamp: true,
+            prevrandao: true,
+            gas_limit: true,
             chain_id: false,
-            basefee: false,
+            basefee: true,
+            difficulty: true,
         }
     }
 
@@ -237,18 +240,32 @@ where
         }
 
         // use exploit template
-        if state.has_preset() && state.rand_mut().below(MUTATOR_SAMPLE_MAX) < EXPLOIT_PRESET_CHOICE {
-            // if flashloan_v2, we don't mutate if it's a borrow
-            if input.get_input_type() != Borrow {
-                match state.get_next_call() {
-                    Some((addr, abi)) => {
-                        input.set_contract_and_abi(addr, Some(abi));
-                        input.mutate(state);
-                        return Ok(MutationResult::Mutated);
+        if state.has_preset() {
+            // println!("有效~~~~~~~~~~~~~");
+            let action_type = "MUTATE_TEMPLATE";
+            let action = select_mutation_action(&P_TABLE, action_type, unsafe { RANDOM_P });
+            match action {
+                "USE_TEMPLATE" => {
+                    increment_mutation_op("MUTATE_TEMPLATE", "USE_TEMPLATE");
+                    // if flashloan_v2, we don't mutate if it's a borrow
+                    if input.get_input_type() != Borrow {
+                        match state.get_next_call() {
+                            Some((addr, abi)) => {
+                                input.set_contract_and_abi(addr, Some(abi));
+                                input.mutate(state);
+                                return Ok(MutationResult::Mutated);
+                            }
+                            None => {
+                                // debug!("cannot find next call");
+                            }
+                        }
                     }
-                    None => {
-                        // debug!("cannot find next call");
-                    }
+                },
+                "NOT_USE" => {
+                    // 在这里执行不使用模板的代码
+                },
+                _ => {
+                    unreachable!()
                 }
             }
         }
@@ -272,26 +289,45 @@ where
         let mut mutated = false;
 
         {
-            if !input.is_step() && state.rand_mut().below(MUTATOR_SAMPLE_MAX) < MUTATE_CALLER_CHOICE {
-                let old_idx = input.get_state_idx();
-                let (idx, new_state) = state.get_infant_state(&mut self.infant_scheduler).unwrap();
-                if idx != old_idx {
-                    if !state.has_caller(&input.get_caller()) {
-                        input.set_caller(state.get_rand_caller());
-                    }
+            if !input.is_step() {
+                // println!("有效~~~~~MUTATE_STATE~~~~~~~~");
+                let action_type = "MUTATE_STATE";
+                let action = select_mutation_action(&P_TABLE, action_type, unsafe { RANDOM_P });
+                match action {
+                    "USE_STATE" => {
+                        increment_mutation_op("MUTATE_STATE", "USE_STATE");
+                        let old_idx = input.get_state_idx();
+                        let (idx, new_state) = state.get_infant_state(&mut self.infant_scheduler).unwrap();
+                        if idx != old_idx {
+                            if !state.has_caller(&input.get_caller()) {
+                                input.set_caller(state.get_rand_caller());
+                            }
 
-                    if Self::ensures_constraint(input, state, &new_state.state, new_state.state.get_constraints()) {
-                        mutated = true;
-                        input.set_staged_state(new_state, idx);
+                            if Self::ensures_constraint(input, state, &new_state.state, new_state.state.get_constraints()) {
+                                mutated = true;
+                                input.set_staged_state(new_state, idx);
+                            }
+                        }
+                    },
+                    "NOT_USE" => {
+                        // 在这里执行不使用状态的代码
+                    },
+                    _ => {
+                        unreachable!()
                     }
                 }
+
             }
 
-            if input.get_staged_state().state.has_post_execution() &&
-                !input.is_step() &&
-                state.rand_mut().below(MUTATOR_SAMPLE_MAX) < TURN_TO_STEP_CHOICE
+            if input.get_staged_state().state.has_post_execution() && !input.is_step()
             {
-                macro_rules! turn_to_step {
+                // println!("有效~~~~~~~MUTATE_DATA~~~~~~");
+                let action_type = "MUTATE_DATA";
+                let action = select_mutation_action(&P_TABLE, action_type, unsafe { RANDOM_P });
+                match action {
+                    "USE_DATA" => {
+                        increment_mutation_op("MUTATE_DATA", "USE_DATA");
+                        macro_rules! turn_to_step {
                     () => {
                         input.set_step(true);
                         // todo(@shou): move args into
@@ -302,11 +338,20 @@ where
                         mutated = true;
                     };
                 }
-                if input.get_input_type() != Borrow {
-                    turn_to_step!();
+                        if input.get_input_type() != Borrow {
+                            turn_to_step!();
+                        }
+
+                        return Ok(MutationResult::Mutated);
+                    },
+                    "NOT_USE" => {
+                        // 在这里执行不使用数据的代码
+                    },
+                    _ => {
+                        unreachable!()
+                    }
                 }
 
-                return Ok(MutationResult::Mutated);
             }
         }
 
@@ -315,8 +360,12 @@ where
             // if the input is a step input (resume execution from a control leak)
             // we should not mutate the VM state, but only mutate the bytes
             if input.is_step() {
-                let res = match state.rand_mut().below(MUTATOR_SAMPLE_MAX) {
-                    0..=LIQUIDATE_CHOICE => {
+                // println!("有效~~~~~闭包  MUTATE_BYTE~~~~~~~~");
+                let action_type = "MUTATE_BYTE";
+                let action = select_mutation_action(&P_TABLE, action_type, unsafe { RANDOM_P });
+                let res =match action {
+                    "MUTATE_LIQUIDATE" => {
+                        increment_mutation_op("MUTATE_BYTE", "MUTATE_LIQUIDATE");
                         // only when there are more than one liquidation path, we attempt to liquidate
                         if unsafe { CAN_LIQUIDATE } {
                             let prev_percent = input.get_liquidation_percent();
@@ -335,8 +384,14 @@ where
                         } else {
                             MutationResult::Skipped
                         }
+                    },
+                    "MUTATE_NORMAL" => {
+                        increment_mutation_op("MUTATE_BYTE", "MUTATE_NORMAL");
+                        input.mutate(state)
+                    },
+                    _ => {
+                        unreachable!()
                     }
-                    _ => input.mutate(state),
                 };
                 input.set_txn_value(EVMU256::ZERO);
                 return res;
@@ -345,22 +400,35 @@ where
             // if the input is to borrow token, we should mutate the randomness
             // (use to select the paths to buy token), VM state, and bytes
             if input.get_input_type() == Borrow {
-                let rand_u8 = state.rand_mut().below(256) as u8;
-                return match state.rand_mut().below(MUTATOR_SAMPLE_MAX) {
-                    0..=RANDOMNESS_CHOICE => {
-                        // mutate the randomness
+                // println!("有效~~~~~闭包  MUTATE_BORROW~~~~~~~~");
+                let rand_u8 = state.rand_mut().below(255) as u8;
+                let action_type = "MUTATE_BORROW";
+                let action = select_mutation_action(&P_TABLE, action_type, unsafe { RANDOM_P });
+                return match action {
+                    "MUTATE_RANDOMNESS" => {
+                        increment_mutation_op("MUTATE_BORROW", "MUTATE_RANDOMNESS");
                         input.set_randomness(vec![rand_u8; 1]);
                         MutationResult::Mutated
+                    },
+                    "MUTATE_NORMAL" => {
+                        increment_mutation_op("MUTATE_BORROW", "MUTATE_NORMAL");
+                        input.mutate(state)
+                    },
+                    _ => {
+                        unreachable!()
                     }
-                    // mutate the bytes
-                    _ => input.mutate(state),
-                };
+                }
             }
 
             // mutate the bytes or VM state or liquidation percent (percentage of token to
             // liquidate) by default
-            match state.rand_mut().below(MUTATOR_SAMPLE_MAX) {
-                0..=LIQUIDATE_CHOICE => {
+
+            // println!("有效~~~~~闭包  MUTATE_ALL~~~~~~~~");
+            let action_type = "MUTATE_ALL";
+            let action = select_mutation_action(&P_TABLE, action_type, unsafe { RANDOM_P });
+            match action {
+                "MUTATE_LIQUIDATION" => {
+                    increment_mutation_op("MUTATE_ALL", "MUTATE_LIQUIDATION");
                     let prev_percent = input.get_liquidation_percent();
                     input.set_liquidation_percent(if state.rand_mut().below(MUTATOR_SAMPLE_MAX) < LIQ_PERCENT_CHOICE {
                         LIQ_PERCENT
@@ -372,13 +440,20 @@ where
                     } else {
                         MutationResult::Skipped
                     }
-                }
-                LIQUIDATE_CHOICE..=RANDOMNESS_CHOICE_2 => {
-                    let rand_u8 = state.rand_mut().below(256) as u8;
+                },
+                "MUTATE_RANDOMNESSL" => {
+                    increment_mutation_op("MUTATE_ALL", "MUTATE_RANDOMNESSL");
+                    let rand_u8 = state.rand_mut().below(255) as u8;
                     input.set_randomness(vec![rand_u8; 1]);
                     MutationResult::Mutated
+                },
+                "MUTATE_NORMAL" => {
+                    increment_mutation_op("MUTATE_ALL", "MUTATE_NORMAL");
+                    input.mutate(state)
+                },
+                _ => {
+                    unreachable!()
                 }
-                _ => input.mutate(state),
             }
         };
 

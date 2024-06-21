@@ -1,3 +1,4 @@
+use crate::global_info::IS_INSTRUCTION_INTERESTING;
 use std::{
     clone::Clone,
     cmp::min,
@@ -6,6 +7,7 @@ use std::{
     marker::PhantomData,
     ops::{BitAnd, Not},
 };
+use std::sync::atomic::Ordering;
 
 use alloy_primitives::{Address, Bytes as AlloyBytes, Log as RawLog, B256};
 use alloy_sol_types::SolInterface;
@@ -67,6 +69,8 @@ enum OpcodeType {
     RealCall,
     /// SLOAD, SSTORE
     Storage,
+    //SELF DESTRUCT
+    SelfDestruct,
     /// REVERT
     Revert,
     /// LOG0~LOG4
@@ -608,8 +612,32 @@ fn get_opcode_type(op: u8, interp: &Interpreter) -> OpcodeType {
                 OpcodeType::RealCall
             }
         }
-        opcode::SLOAD | opcode::SSTORE => OpcodeType::Storage,
-        opcode::LOG0..=opcode::LOG4 => OpcodeType::Log,
+        opcode::DELEGATECALL => {
+            IS_INSTRUCTION_INTERESTING.store(2, Ordering::SeqCst);
+            let target: B160 = B160(
+                interp.stack().peek(1).unwrap().to_be_bytes::<{ U256::BYTES }>()[12..]
+                    .try_into()
+                    .unwrap(),
+            );
+
+            if target.as_slice() == CHEATCODE_ADDRESS.as_slice() {
+                OpcodeType::CheatCall
+            } else {
+                OpcodeType::RealCall
+            }
+        },
+        opcode::SLOAD | opcode::SSTORE |opcode::MSTORE| opcode::MSTORE8 => {
+            IS_INSTRUCTION_INTERESTING.store(1, Ordering::SeqCst);
+            OpcodeType::Storage
+        },
+        opcode::SELFDESTRUCT => {
+            IS_INSTRUCTION_INTERESTING.store(3, Ordering::SeqCst);
+            OpcodeType::SelfDestruct
+        },
+        opcode::LOG0..=opcode::LOG4 => {
+            IS_INSTRUCTION_INTERESTING.store(0, Ordering::SeqCst);
+            OpcodeType::Log
+        },
         opcode::REVERT => OpcodeType::Revert,
         _ => OpcodeType::Careless,
     }

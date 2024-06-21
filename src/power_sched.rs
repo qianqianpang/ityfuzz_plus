@@ -2,6 +2,7 @@
 //! stage.
 
 use core::{fmt::Debug, marker::PhantomData};
+use std::sync::atomic::Ordering;
 
 use libafl::{
     corpus::{Corpus, CorpusId},
@@ -13,6 +14,7 @@ use libafl::{
     state::{HasCorpus, HasMetadata, HasRand, UsesState},
     Error,
 };
+use crate::global_info::{adjust_p_table, calculate_value, MUTATE_SUCCESS_COUNT};
 
 pub trait TestcaseScoreWithId<S>
 where
@@ -90,7 +92,13 @@ where
         manager: &mut EM,
         corpus_idx: CorpusId,
     ) -> Result<(), Error> {
+        MUTATE_SUCCESS_COUNT.fetch_add(1, Ordering::SeqCst);
+        println!("===============================================================执行mutate stage perform======================================================================");
+
         let ret = self.perform_mutational(fuzzer, executor, state, manager, corpus_idx);
+
+        calculate_value();
+        adjust_p_table();
         ret
     }
 }
