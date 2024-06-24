@@ -36,6 +36,7 @@ use std::{
     rc::Rc,
     str::FromStr,
 };
+use std::sync::Mutex;
 
 use blaz::{
     builder::{BuildJob, BuildJobResult},
@@ -48,6 +49,7 @@ use contract_utils::ContractLoader;
 use ethers::types::Transaction;
 use input::{ConciseEVMInput, EVMInput};
 use itertools::Itertools;
+use lazy_static::lazy_static;
 use num_cpus;
 use onchain::endpoints::{Chain, OnChainConfig};
 use oracles::{erc20::IERC20OracleFlashloan, v2_pair::PairBalanceOracle};
@@ -476,7 +478,10 @@ impl OracleType {
         results
     }
 }
-
+lazy_static! {
+    pub static ref INSTRUCTION_COVERAGE: Mutex<f64> = Mutex::new(0.0);
+    pub static ref BRANCH_COVERAGE: Mutex<f64> = Mutex::new(0.0);
+}
 #[allow(clippy::type_complexity)]
 pub fn evm_main(mut args: EvmArgs) {
     args.setup_file = args.deployment_script;

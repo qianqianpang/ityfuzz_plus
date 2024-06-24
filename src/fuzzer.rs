@@ -55,6 +55,7 @@ use crate::{
     scheduler::HasReportCorpus,
     state::{HasCurrentInputIdx, HasExecutionResult, HasInfantStateState, HasItyState, InfantStateState},
 };
+use crate::evm::{BRANCH_COVERAGE, INSTRUCTION_COVERAGE};
 use crate::global_info::{IS_CMP_INTERESTING, IS_DATAFLOW_INTERESTING, IS_OBJECTIVE};
 
 pub static mut RUN_FOREVER: bool = false;
@@ -581,6 +582,9 @@ where
                 // 获取当前的变异次数
                 let success_count = MUTATE_SUCCESS_COUNT.load(Ordering::SeqCst);
                  println!("变异了{}次",success_count);
+                let instruction_coverage = INSTRUCTION_COVERAGE.lock().unwrap();
+                let branch_coverage = BRANCH_COVERAGE.lock().unwrap();
+                println!("Instruction Coverage: {}%, Branch Coverage: {}%", *instruction_coverage,*branch_coverage);
                 print_p_table();
 
                 let cur_report =
