@@ -1,6 +1,7 @@
+use crate::dqn_alogritm::get_mutator_selection;
 use std::{cell::RefCell, collections::HashMap, fmt::Debug, ops::Deref, rc::Rc};
 use std::collections::HashSet;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use alloy_primitives::U256;
 
 use bytes::Bytes;
@@ -80,7 +81,7 @@ pub trait EVMInputT {
 
     /// Get the access pattern of the input, used by the mutator to determine
     /// what to mutate
-    fn get_access_pattern(&self) -> &Rc<RefCell<AccessPattern>>;
+    fn get_access_pattern(&self) -> &Arc<Mutex<AccessPattern>>;
 
     /// Get the transaction value in wei
     fn get_txn_value(&self) -> Option<EVMU256>;
@@ -144,7 +145,8 @@ pub struct EVMInput {
 
     /// Access pattern
     #[serde(skip_deserializing)]
-    pub access_pattern: Rc<RefCell<AccessPattern>>,
+    // pub access_pattern: Rc<RefCell<AccessPattern>>,
+    pub access_pattern: Arc<Mutex<AccessPattern>>,
 
     /// Percentage of the token amount in all callers' account to liquidate
     pub liquidation_percent: u8,
@@ -348,7 +350,7 @@ impl ConciseEVMInput {
                 txn_value: self.txn_value,
                 step: self.step,
                 env: self.env.clone(),
-                access_pattern: Rc::new(RefCell::new(AccessPattern::new())),
+                access_pattern: Arc::new(Mutex::new(AccessPattern::new())),
                 liquidation_percent: self.liquidation_percent,
                 #[cfg(not(feature = "debug"))]
                 direct_data: Bytes::new(),
@@ -644,7 +646,7 @@ impl std::fmt::Debug for EVMInput {
 impl EVMInputT for EVMInput {
     fn set_contract_and_abi(&mut self, contract: EVMAddress, abi: Option<BoxedABI>) {
         self.contract = contract;
-        self.access_pattern = Rc::new(RefCell::new(AccessPattern::new()));
+        self.access_pattern = Arc::new(Mutex::new(AccessPattern::new()));
         self.data = abi;
     }
 
@@ -667,7 +669,7 @@ impl EVMInputT for EVMInput {
         &self.env
     }
 
-    fn get_access_pattern(&self) -> &Rc<RefCell<AccessPattern>> {
+    fn get_access_pattern(&self) -> &std::sync::Arc<Mutex<AccessPattern>> {
         &self.access_pattern
     }
 
@@ -993,88 +995,90 @@ impl EVMInput {
 
         // let mutator = mutators[state.rand_mut().below(mutators.len() as u64) as usize];
         // mutator(self, state)
-        //重写选择mutator
-        let selected_mutator_name = select_mutation_action(&P_TABLE, "ENV", unsafe { RANDOM_P });
-        match selected_mutator_name {
-            "ENV_CALLER" =>{
-                increment_mutation_op("ENV", "ENV_CALLER");
+        let mutator_selection = get_mutator_selection();
+        match mutator_selection.get("3_mutate_field") {
+            Some(&1) => {
                 let idx = mutators_name.iter().position(|&r| r == "caller").unwrap();
                 let mutator = mutators[idx];
                 mutator(self, state)
-            },
-            "ENV_BALANCE" => {
-                increment_mutation_op("ENV", "ENV_BALANCE");
+            }
+            Some(&2) => {
                 match mutators_name.iter().position(|&r| r == "balance") {
                     Some(idx) => {
                         let mutator = mutators[idx];
                         mutator(self, state)
                     },
                     None => {
-                        self.mutate_env_with_access_pattern(state)
+                        // self.mutate_env_with_access_pattern(state)
+                        MutationResult::Skipped
+                        // if retry < 5 {
+                        //     self.mutate_env_with_access_pattern(state,retry+1)
+                        // } else {
+                        //     MutationResult::Skipped
+                        // }
                     }
                 }
-            },
-            "ENV_GASPRICE" => {
-                increment_mutation_op("ENV", "ENV_GASPRICE");
+            }
+            Some(&3) => {
                 let idx = mutators_name.iter().position(|&r| r == "gas_price").unwrap();
                 let mutator = mutators[idx];
                 mutator(self, state)
-            },
-            "ENV_BASEFEE" => {
-                increment_mutation_op("ENV", "ENV_BASEFEE");
+            }
+            Some(&4) => {
                 let idx = mutators_name.iter().position(|&r| r == "basefee").unwrap();
                 let mutator = mutators[idx];
                 mutator(self, state)
-            },
-            "ENV_TIMESTAMP" =>{
-                increment_mutation_op("ENV", "ENV_TIMESTAMP");
+            }
+            Some(&5) => {
                 let idx = mutators_name.iter().position(|&r| r == "timestamp").unwrap();
                 let mutator = mutators[idx];
                 mutator(self, state)
-            },
-            "ENV_COINBASE" => {
-                increment_mutation_op("ENV", "ENV_COINBASE");
+            }
+            Some(&6) => {
                 let idx = mutators_name.iter().position(|&r| r == "coinbase").unwrap();
                 let mutator = mutators[idx];
                 mutator(self, state)
-            },
-            "ENV_GASLIMIT" => {
-                increment_mutation_op("ENV", "ENV_GASLIMIT");
+            }
+            Some(&7) => {
                 let idx = mutators_name.iter().position(|&r| r == "gas_limit").unwrap();
                 let mutator = mutators[idx];
                 mutator(self, state)
-            },
-            "ENV_NUMBER" => {
-                increment_mutation_op("ENV", "ENV_NUMBER");
+            }
+            Some(&8) => {
                 let idx = mutators_name.iter().position(|&r| r == "number").unwrap();
                 let mutator = mutators[idx];
                 mutator(self, state)
-            },
-            "ENV_CALLVALUE" => {
-                increment_mutation_op("ENV", "ENV_CALLVALUE");
+            }
+            Some(&9) => {
                 match mutators_name.iter().position(|&r| r == "call_value") {
                     Some(idx) => {
                         let mutator = mutators[idx];
                         mutator(self, state)
                     },
                     None => {
-                        self.mutate_env_with_access_pattern(state)
+                        // self.mutate_env_with_access_pattern(state)
+                        MutationResult::Skipped
+                        // if retry < 5 {
+                        //     self.mutate_env_with_access_pattern(state,retry+1)
+                        // } else {
+                        //     MutationResult::Skipped
+                        // }
                     }
                 }
-            },
-            "ENV_PREVRANDAO" => {
-                increment_mutation_op("ENV", "ENV_PREVRANDAO");
+            }//不可达的  10 11？？？
+            Some(&10) => {
                 let idx = mutators_name.iter().position(|&r| r == "prevrandao").unwrap();
                 let mutator = mutators[idx];
                 mutator(self, state)
-            },
-            "ENV_DIFFICULTY" => {
-                increment_mutation_op("ENV", "ENV_DIFFICULTY");
+            }
+            Some(&11) => {
                 let idx = mutators_name.iter().position(|&r| r == "difficulty").unwrap();
                 let mutator = mutators[idx];
                 mutator(self, state)
-            },
-            _ => { unreachable!()}
+            }
+            _ => {
+                unreachable!();
+            }
         }
     }
 }

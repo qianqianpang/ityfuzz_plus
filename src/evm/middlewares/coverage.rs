@@ -20,14 +20,7 @@ use serde::Serialize;
 use serde_json;
 use tracing::info;
 
-use crate::evm::{
-    bytecode_iterator::all_bytecode,
-    host::FuzzHost,
-    middlewares::middleware::{Middleware, MiddlewareType},
-    srcmap::{RawSourceMapInfo, SourceCodeResult, SOURCE_MAP_PROVIDER},
-    types::{is_zero, EVMAddress, EVMFuzzState},
-    vm::IN_DEPLOY,
-};
+use crate::evm::{BRANCH_COVERAGE, bytecode_iterator::all_bytecode, host::FuzzHost, INSTRUCTION_COVERAGE, middlewares::middleware::{Middleware, MiddlewareType}, srcmap::{RawSourceMapInfo, SourceCodeResult, SOURCE_MAP_PROVIDER}, types::{is_zero, EVMAddress, EVMFuzzState}, vm::IN_DEPLOY};
 
 pub static mut EVAL_COVERAGE: bool = false;
 
@@ -185,6 +178,12 @@ impl CoverageReport {
     pub fn summarize(&self) {
         info!("============= Coverage Summary =============");
         for (addr, cov) in &self.coverage {
+            {
+                let mut instruction_coverage_ratio = INSTRUCTION_COVERAGE.lock().unwrap();
+                *instruction_coverage_ratio = (cov.instruction_coverage * 100) as f64 / cov.total_instructions as f64;
+                let mut branch_coverage_ratio = BRANCH_COVERAGE.lock().unwrap();
+                *branch_coverage_ratio = (cov.branch_coverage * 100) as f64 / cov.total_branches as f64;
+            }
             info!(
                 "{}: {:.2}% Instruction Covered, {:.2}% Branch Covered",
                 addr,

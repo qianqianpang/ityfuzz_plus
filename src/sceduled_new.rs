@@ -6,6 +6,7 @@ use libafl::Error;
 
 use libafl_bolts::Named;
 use libafl_bolts::tuples::NamedTuple;
+use crate::dqn_alogritm::get_mutator_selection;
 use crate::global_info::{P_TABLE,RANDOM_P, select_mutation_action};
 
 
@@ -54,11 +55,20 @@ where
         // self.inner.schedule(state, input)
         // println!("我重写的2");
         debug_assert!(!self.mutations().is_empty());
-        // state.rand_mut().below(self.mutations().len() as u64).into()
-        let action_type = "BYTE_MUTATIONS";
-        let action = select_mutation_action(&P_TABLE, action_type, unsafe { RANDOM_P });
-        let idx = self.mutations().names().iter().position(|&r| r == action).unwrap();
-        idx.into()
+        let mutator_selection = get_mutator_selection();
+        // println!(",,,,,{:?}", mutator_selection);
+        let byte_expansion=mutator_selection["5_byte_expansion"];
+        let detail_mutation=mutator_selection["6_detail_mutation"];
+        if detail_mutation ==1{
+            let idx = (detail_mutation-1) as usize;
+            idx.into()
+        }else if byte_expansion==2{
+            let idx = (detail_mutation-1) as usize;
+            idx.into()
+        }else{
+            let idx = 2usize;
+            idx.into()
+        }
     }
 
     fn scheduled_mutate(

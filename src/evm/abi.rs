@@ -1,3 +1,4 @@
+use crate::dqn_alogritm::get_mutator_selection;
 use std::{
     any::Any,
     collections::HashMap,
@@ -36,7 +37,6 @@ use crate::{
     r#const::{EXPAND_CHOICE_MAX, MUTATE_CHOICE_MAX, RANDOM_ADDRESS_CHOICE, SAMPLE_MAX},
     state::{HasCaller, HasItyState},
 };
-use crate::global_info::{increment_mutation_op, P_TABLE, RANDOM_P, select_mutation_action};
 /// Mapping from known signature to function name
 pub static mut FUNCTION_SIG: Lazy<HashMap<[u8; 4], String>> = Lazy::new(HashMap::new);
 
@@ -133,7 +133,7 @@ pub enum ABILossyType {
 
 /// Traits of ABI types (encoding, decoding, etc.)
 #[typetag::serde(tag = "type")]
-pub trait ABI: CloneABI {
+pub trait ABI: CloneABI + Send {
     /// Is the args static (i.e., fixed size)
     fn is_static(&self) -> bool;
     /// Get the ABI-encoded bytes of args
@@ -402,64 +402,66 @@ impl BoxedABI {
         Addr: Clone + Debug + Serialize + DeserializeOwned,
         CI: Serialize + DeserializeOwned + Debug + Clone + ConciseSerde,
     {
+        let mutator_selection = get_mutator_selection();
+        let mutate_field = mutator_selection["3_mutate_field"];
+        let mutate_method = mutator_selection["4_mutate_method"];
         match self.get_type() {
             // no need to mutate empty args
             TEmpty => MutationResult::Skipped,
             // mutate static args
             T256 => {
-                let v = self.b.deref_mut().as_any();
-                let a256 = v.downcast_mut::<A256>().unwrap();
-                if a256.dont_mutate {
-                    return MutationResult::Skipped;
-                }
-                unsafe {
-                    if a256.is_address {
-                        // 根据概率最大的操作选择变异动作
-                        let action = select_mutation_action(&P_TABLE, "T256_ADDRESS", RANDOM_P);
-                        match action {
-                            "T256_ADDRESS_RANDOM" => {
-                                increment_mutation_op("T256_ADDRESS", "T256_ADDRESS_RANDOM");
-                                a256.data = state.get_rand_address().0.to_vec();
-                            }
-                            "T256_ADDRESS_SELF" => {
-                                increment_mutation_op("T256_ADDRESS", "T256_ADDRESS_SELF");
-                                a256.data = [0; 20].to_vec();
-                            }
-                            _ => {
-                                unreachable!()
-                            }
-                        }
-                        MutationResult::Mutated
-                    } else {
-                        byte_mutator(state, a256, vm_slots)
+                if mutate_field ==2{
+                    let v = self.b.deref_mut().as_any();
+                    let a256 = v.downcast_mut::<A256>().unwrap();
+                    if a256.dont_mutate {
+                        return MutationResult::Skipped;
                     }
+                    unsafe {
+                        if a256.is_address {
+                            // 根据概率最大的操作选择变异动作
+                            if mutate_method ==1{
+                                a256.data = state.get_rand_address().0.to_vec();
+                                MutationResult::Mutated
+                            }else if mutate_method ==2{
+                                a256.data = [0; 20].to_vec();
+                                MutationResult::Mutated
+                            }else{
+                                return MutationResult::Skipped;
+                            }
+                        } else {
+                            byte_mutator(state, a256, vm_slots)
+                        }
+                    }
+                }else {
+                    return   MutationResult::Skipped;
                 }
             }
             // mutate dynamic args
             TDynamic => {
-                let adyn = self.b.deref_mut().as_any().downcast_mut::<ADynamic>().unwrap();
-                // self.b.downcast_ref::<A256>().unwrap().mutate(state);
-                byte_mutator_with_expansion(state, adyn, vm_slots)
+                if mutate_field ==3{
+                    let adyn = self.b.deref_mut().as_any().downcast_mut::<ADynamic>().unwrap();
+                    // self.b.downcast_ref::<A256>().unwrap().mutate(state);
+                    byte_mutator_with_expansion(state, adyn, vm_slots)
+                }
+                else {
+                    return   MutationResult::Skipped;
+                }
             }
             // mutate tuple/array args
             TArray => {
-                let aarray = self.b.deref_mut().as_any().downcast_mut::<AArray>().unwrap();
+                if mutate_field ==4{
+                    let aarray = self.b.deref_mut().as_any().downcast_mut::<AArray>().unwrap();
 
-                let data_len = aarray.data.len();
-                if data_len == 0 {
-                    return MutationResult::Skipped;
-                }
-                if aarray.dynamic_size {
-                    let action = unsafe { select_mutation_action(&P_TABLE, "TARRAY_DYNAMIC", RANDOM_P) };
-                    match action {
-                        "TARRAY_DYNAMIC_RANDOM" => {
-                            increment_mutation_op("TARRAY_DYNAMIC", "TARRAY_DYNAMIC_RANDOM");
+                    let data_len = aarray.data.len();
+                    if data_len == 0 {
+                        return MutationResult::Skipped;
+                    }
+                    if aarray.dynamic_size {
+                        if mutate_method ==1{
                             let index: usize = state.rand_mut().next() as usize % data_len;
                             let result = aarray.data[index].mutate_with_vm_slots(state, vm_slots);
                             return result;
-                        }
-                        "TARRAY_DYNAMIC_INCREASE" => {
-                            increment_mutation_op("TARRAY_DYNAMIC", "TARRAY_DYNAMIC_INCREASE");
+                        }else if mutate_method ==2{
                             // increase size
                             if state.max_size() <= aarray.data.len() {
                                 return MutationResult::Skipped;
@@ -467,47 +469,44 @@ impl BoxedABI {
                             for _ in 0..state.rand_mut().next() as usize % state.max_size() {
                                 aarray.data.push(aarray.data[0].clone());
                             }
-                        }
-                        "TARRAY_DYNAMIC_DECREASE" => {
-                            increment_mutation_op("TARRAY_DYNAMIC", "TARRAY_DYNAMIC_DECREASE");
+                        }else if mutate_method ==3{
                             // decrease size
                             if aarray.data.is_empty() {
                                 return MutationResult::Skipped;
                             }
                             let index: usize = state.rand_mut().next() as usize % data_len;
                             aarray.data.remove(index);
+                        }else{
+                            return MutationResult::Skipped;
                         }
-                        _ => {
-                            unreachable!()
-                        }
+                    } else {
+                        let index: usize = state.rand_mut().next() as usize % data_len;
+                        return aarray.data[index].mutate_with_vm_slots(state, vm_slots);
                     }
-                } else {
-                    let index: usize = state.rand_mut().next() as usize % data_len;
-                    return aarray.data[index].mutate_with_vm_slots(state, vm_slots);
+                    MutationResult::Mutated
                 }
-                MutationResult::Mutated
+                else{
+                    return  MutationResult::Skipped;
+                }
             }
             // mutate unknown args, may change the type
             TUnknown => {
-                let a_unknown = self.b.deref_mut().as_any().downcast_mut::<AUnknown>().unwrap();
-                if a_unknown.size == 0 {
-                    a_unknown.concrete = BoxedABI::new(Box::new(AEmpty {}));
-                    return MutationResult::Skipped;
-                }
-                let action = unsafe { select_mutation_action(&P_TABLE, "TUNKNOWN", RANDOM_P) };
-                match action {
-                    "TUNKNOWN_SLOT" => {
-                        increment_mutation_op("TUNKNOWN", "TUNKNOWN_SLOT");
-                        a_unknown.concrete.mutate_with_vm_slots(state, vm_slots)
+                if mutate_field ==5{
+                    let a_unknown = self.b.deref_mut().as_any().downcast_mut::<AUnknown>().unwrap();
+                    if a_unknown.size == 0 {
+                        a_unknown.concrete = BoxedABI::new(Box::new(AEmpty {}));
+                        return MutationResult::Skipped;
                     }
-                    "TUNKNOWN_ABI" => {
-                        increment_mutation_op("TUNKNOWN", "TUNKNOWN_ABI");
+                    if mutate_method ==1{
+                        a_unknown.concrete.mutate_with_vm_slots_ptable(state, vm_slots)
+                    }else if mutate_method ==2{
                         a_unknown.concrete = sample_abi(state, a_unknown.size);
                         MutationResult::Mutated
+                    }else{
+                        return MutationResult::Skipped;
                     }
-                    _ => {
-                        unreachable!()
-                    }
+                }else{
+                    return  MutationResult::Skipped;
                 }
             }
         }

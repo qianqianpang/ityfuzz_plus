@@ -1,5 +1,5 @@
+use crate::power_sched::plot_reward_values;
 use crate::global_info::print_p_table;
-use crate::global_info::MUTATE_SUCCESS_COUNT;
 use std::{
     collections::{hash_map::DefaultHasher, HashMap},
     env,
@@ -55,6 +55,7 @@ use crate::{
     scheduler::HasReportCorpus,
     state::{HasCurrentInputIdx, HasExecutionResult, HasInfantStateState, HasItyState, InfantStateState},
 };
+use crate::evm::{BRANCH_COVERAGE, FUZZ_MUTATION_COUNTS, INSTRUCTION_COVERAGE, MUTATE_SUCCESS_COUNT, SOLUTION_FLAG, XUNHUAN_FLAG};
 use crate::global_info::{IS_CMP_INTERESTING, IS_DATAFLOW_INTERESTING, IS_OBJECTIVE};
 
 pub static mut RUN_FOREVER: bool = false;
@@ -284,6 +285,10 @@ where
                 .unwrap(),
         );
         loop {
+            let solution_flag_value = SOLUTION_FLAG.load(Ordering::SeqCst);
+            if solution_flag_value == 1{
+                return Err(libafl::Error::Unknown(String::from("Solution flag was set to 1"), Default::default()));
+            }
             self.fuzz_one(stages, executor, state, manager)?;
             manager.maybe_report_progress(state, reporting_interval)?;
         }
@@ -578,10 +583,16 @@ where
                     .join("\n");
 
                 println!("\n\n\n😊😊 Found vulnerabilities! \n\n");
+                XUNHUAN_FLAG.store(true, Ordering::SeqCst);
                 // 获取当前的变异次数
                 let success_count = MUTATE_SUCCESS_COUNT.load(Ordering::SeqCst);
                  println!("变异了{}次",success_count);
-                print_p_table();
+                let instruction_coverage = INSTRUCTION_COVERAGE.lock().unwrap();
+                let branch_coverage = BRANCH_COVERAGE.lock().unwrap();
+                println!("Instruction Coverage: {}%, Branch Coverage: {}%", *instruction_coverage,*branch_coverage);
+                let mut counts = FUZZ_MUTATION_COUNTS.lock().unwrap();
+                counts.push(success_count);
+                plot_reward_values();
 
                 let cur_report =
                     format!(

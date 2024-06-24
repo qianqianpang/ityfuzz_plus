@@ -27,6 +27,8 @@ pub mod tracer;
 pub mod global_info;
 pub mod sceduled_new;
 
+pub mod dqn_alogritm;
+
 #[cfg(feature = "sui_support")]
 pub mod r#move;
 
