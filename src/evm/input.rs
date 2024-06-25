@@ -953,7 +953,7 @@ impl EVMInput {
         where
             S: State + HasCaller<EVMAddress> + HasRand + HasMetadata,
     {
-        let ap = self.get_access_pattern().deref().borrow().clone();
+        let ap = self.get_access_pattern().lock().unwrap().clone();
         let mut mutators = vec![];
         let mut mutators_name: Vec<&'static str> = Vec::new();
         macro_rules! add_mutator {

@@ -550,6 +550,9 @@ fn plot_fuzz_mutation_counts() -> Result<(), Box<dyn std::error::Error>> {
 #[allow(clippy::type_complexity)]
 pub fn evm_main(mut args: EvmArgs) {
     for _ in 0..100 {
+        MUTATE_SUCCESS_COUNT.store(0, Ordering::SeqCst);
+        SOLUTION_FLAG.store(0, Ordering::SeqCst);
+
         args.setup_file = args.deployment_script.clone();
         let target = args.target.clone();
         if !args.base_directory.is_empty() {
@@ -908,8 +911,14 @@ pub fn evm_main(mut args: EvmArgs) {
         let abis_json = format!("{}/abis.json", args.work_dir.clone().as_str());
 
         utils::try_write_file(&abis_json, &json_str, true).unwrap();
-        evm_fuzzer(config, &mut state)
+        evm_fuzzer(config, &mut state);
+
+        // 增加fuzz次数
+        FUZZ_COUNT.fetch_add(1, Ordering::SeqCst);
+        println!("👉👉👉👉👉👉👉👉👉又执行了一次......");
+        plot_fuzz_mutation_counts().expect("plot error");
     }
+
 
     // #[test]
     fn test_evm_offchain_setup() {
@@ -1084,10 +1093,6 @@ pub fn evm_main(mut args: EvmArgs) {
         let abis_json = format!("{}/abis.json", args.work_dir.clone().as_str());
 
         utils::try_write_file(&abis_json, &json_str, true).unwrap();
-        evm_fuzzer(config, &mut state);
-        // 增加fuzz次数
-        FUZZ_COUNT.fetch_add(1, Ordering::SeqCst);
-        println!("👉👉👉👉👉👉👉👉👉又执行了一次，，，，，，，，，，，，，，，，，");
-        plot_fuzz_mutation_counts();
+        evm_fuzzer(config, &mut state)
     }
 }

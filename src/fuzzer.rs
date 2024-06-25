@@ -275,7 +275,7 @@ where
         executor: &mut E,
         state: &mut EM::State,
         manager: &mut EM,
-    ) -> Result<(), Error> {
+    ) -> std::result::Result<(), libafl::Error> {
         println!("=======================开始fuzzloop==========================");
         // now report stats to manager every 1 sec
         let reporting_interval = Duration::from_millis(
@@ -290,7 +290,7 @@ where
                 return Err(libafl::Error::Unknown(String::from("Solution flag was set to 1"), Default::default()));
             }
             self.fuzz_one(stages, executor, state, manager)?;
-            manager.maybe_report_progress(state, reporting_interval)?;
+            // manager.maybe_report_progress(state, reporting_interval)?;
         }
     }
 }
@@ -648,9 +648,9 @@ where
                     // dump_file!(state, vulns_dir, false);
                 }
 
-                if !unsafe { RUN_FOREVER } {
-                    exit(0);
-                }
+                // if !unsafe { RUN_FOREVER } {
+                //     exit(0);
+                // }
 
                 return Ok((res, None));
             }

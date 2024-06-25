@@ -16,6 +16,7 @@ use libafl::{
     state::{HasCorpus, HasExecutions, HasLastReportTime, HasMaxSize, HasNamedMetadata, HasRand, HasSolutions, State},
     Error,
 };
+use libafl::state::HasClientPerfMonitor;
 use libafl_bolts::{
     bolts_prelude::{NamedSerdeAnyMap, Rand, RomuDuoJrRand, SerdeAnyMap, StdRand},
     current_nanos,
@@ -468,7 +469,6 @@ where
         &self.hash_to_address
     }
 }
-
 impl<Loc, Addr, VS, CI> State for InfantStateState<Loc, Addr, VS, CI>
 where
     VS: Default + VMStateT + DeserializeOwned,
@@ -477,7 +477,20 @@ where
     CI: Serialize + DeserializeOwned + Debug + Clone + ConciseSerde,
 {
 }
+impl<Loc, Addr, VS, CI> HasClientPerfMonitor for InfantStateState<Loc, Addr, VS, CI>
+    where
+        VS: Default + VMStateT + DeserializeOwned,
+        Addr: Debug + Serialize + DeserializeOwned + Clone,
+        Loc: Serialize + DeserializeOwned + Debug + Clone,
+        CI: Serialize + DeserializeOwned + Debug + Clone + ConciseSerde,{
+    fn introspection_monitor(&self) -> &ClientPerfMonitor {
+        todo!()
+    }
 
+    fn introspection_monitor_mut(&mut self) -> &mut ClientPerfMonitor {
+        todo!()
+    }
+}
 impl<Loc, Addr, VS, CI> HasCorpus for InfantStateState<Loc, Addr, VS, CI>
 where
     VS: Default + VMStateT + DeserializeOwned,
@@ -739,7 +752,25 @@ where
         &mut self.solutions
     }
 }
+impl<VI, VS, Loc, Addr, Out, CI> HasClientPerfMonitor for FuzzState<VI, VS, Loc, Addr, Out, CI>
+    where
+        VS: Default + VMStateT,
+        VI: VMInputT<VS, Loc, Addr, CI> + Input,
+        Addr: Serialize + DeserializeOwned + Debug + Clone,
+        Loc: Serialize + DeserializeOwned + Debug + Clone,
+        Out: Default + Into<Vec<u8>> + Clone,
+        CI: Serialize + DeserializeOwned + Debug + Clone + ConciseSerde,
+{
+    /// Get the client performance monitor
+    fn introspection_monitor(&self) -> &ClientPerfMonitor {
+        todo!()
+    }
 
+    /// Get the mutable client performance monitor
+    fn introspection_monitor_mut(&mut self) -> &mut ClientPerfMonitor {
+        todo!()
+    }
+}
 impl<VI, VS, Loc, Addr, Out, CI> HasExecutionResult<Loc, Addr, VS, Out, CI> for FuzzState<VI, VS, Loc, Addr, Out, CI>
 where
     VS: Default + VMStateT,

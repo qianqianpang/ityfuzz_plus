@@ -12,6 +12,7 @@ use std::{
     str::FromStr,
     sync::Arc,
 };
+use std::sync::Mutex;
 
 use bytes::Bytes;
 use crypto::{digest::Digest, sha3::Sha3};
@@ -484,7 +485,7 @@ impl OnChain {
                     txn_value: if abi.is_payable { Some(EVMU256::ZERO) } else { None },
                     step: false,
                     env: state.metadata_map().get::<EnvMetadata>().unwrap().env.clone(),
-                    access_pattern: Rc::new(RefCell::new(AccessPattern::new())),
+                    access_pattern: Arc::new(Mutex::new(AccessPattern::new())),
                     liquidation_percent: 0,
                     input_type: EVMInputTy::ABI,
                     direct_data: Default::default(),

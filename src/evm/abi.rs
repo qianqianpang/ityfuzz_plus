@@ -498,7 +498,7 @@ impl BoxedABI {
                         return MutationResult::Skipped;
                     }
                     if mutate_method ==1{
-                        a_unknown.concrete.mutate_with_vm_slots_ptable(state, vm_slots)
+                        a_unknown.concrete.mutate_with_vm_slots(state, vm_slots)
                     }else if mutate_method ==2{
                         a_unknown.concrete = sample_abi(state, a_unknown.size);
                         MutationResult::Mutated

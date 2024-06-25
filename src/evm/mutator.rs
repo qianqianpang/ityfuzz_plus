@@ -14,7 +14,7 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 use super::onchain::flashloan::CAN_LIQUIDATE;
 /// Mutator for EVM inputs
-use crate::evm::input::EVMInputT;
+use crate::evm::input::{EVMInput, EVMInputT};
 use crate::{
     evm::{
         abi::ABIAddressToInstanceMap,
@@ -228,7 +228,7 @@ where
     VS: Default + VMStateT + EVMStateT,
     Addr: PartialEq + Debug + Serialize + DeserializeOwned + Clone,
     Loc: Serialize + DeserializeOwned + Debug + Clone,
-    CI: Serialize + DeserializeOwned + Debug + Clone + ConciseSerde,
+    CI: Serialize + DeserializeOwned + Debug + Clone + ConciseSerde, EVMInput: From<I>
 {
     /// Mutate the input
     #[allow(unused_assignments)]
