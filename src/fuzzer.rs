@@ -1,5 +1,4 @@
-use crate::global_info::print_p_table;
-use crate::global_info::MUTATE_SUCCESS_COUNT;
+use crate::global_info::{adjust_p_table, calculate_value, print_p_table};
 use std::{
     collections::{hash_map::DefaultHasher, HashMap},
     env,
@@ -55,7 +54,7 @@ use crate::{
     scheduler::HasReportCorpus,
     state::{HasCurrentInputIdx, HasExecutionResult, HasInfantStateState, HasItyState, InfantStateState},
 };
-use crate::evm::{BRANCH_COVERAGE, INSTRUCTION_COVERAGE};
+use crate::evm::{BRANCH_COVERAGE, INSTRUCTION_COVERAGE, MUTATE_SUCCESS_COUNT};
 use crate::global_info::{IS_CMP_INTERESTING, IS_DATAFLOW_INTERESTING, IS_OBJECTIVE};
 
 pub static mut RUN_FOREVER: bool = false;
@@ -264,6 +263,8 @@ where
         stages
             .perform_all(self, executor, state, manager, idx)
             .expect("perform_all failed");
+        calculate_value();
+        adjust_p_table();
         manager.process(self, state, executor)?;
         Ok(idx)
     }

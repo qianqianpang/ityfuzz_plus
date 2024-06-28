@@ -20,7 +20,7 @@ use serde::Serialize;
 use serde_json;
 use tracing::info;
 
-use crate::evm::{BRANCH_COVERAGE, bytecode_iterator::all_bytecode, host::FuzzHost, INSTRUCTION_COVERAGE, middlewares::middleware::{Middleware, MiddlewareType}, srcmap::{RawSourceMapInfo, SourceCodeResult, SOURCE_MAP_PROVIDER}, types::{is_zero, EVMAddress, EVMFuzzState}, vm::IN_DEPLOY};
+use crate::evm::{BRANCH_COVERAGE, BRANCH_COVERAGE_LIST, bytecode_iterator::all_bytecode, host::FuzzHost, INSTRUCTION_COVERAGE, INSTRUCTION_COVERAGE_LIST, middlewares::middleware::{Middleware, MiddlewareType}, srcmap::{RawSourceMapInfo, SourceCodeResult, SOURCE_MAP_PROVIDER}, types::{is_zero, EVMAddress, EVMFuzzState}, vm::IN_DEPLOY};
 
 pub static mut EVAL_COVERAGE: bool = false;
 
@@ -183,6 +183,12 @@ impl CoverageReport {
                 *instruction_coverage_ratio = (cov.instruction_coverage * 100) as f64 / cov.total_instructions as f64;
                 let mut branch_coverage_ratio = BRANCH_COVERAGE.lock().unwrap();
                 *branch_coverage_ratio = (cov.branch_coverage * 100) as f64 / cov.total_branches as f64;
+
+                //将获取到的当前覆盖率存储到INSTRUCTION_COVERAGE_LIST， BRANCH_COVERAGE_LIST
+                let mut instruction_coverage_list = INSTRUCTION_COVERAGE_LIST.lock().unwrap();
+                instruction_coverage_list.push(*instruction_coverage_ratio);
+                let mut branch_coverage_list = BRANCH_COVERAGE_LIST.lock().unwrap();
+                branch_coverage_list.push(*branch_coverage_ratio);
             }
             info!(
                 "{}: {:.2}% Instruction Covered, {:.2}% Branch Covered",

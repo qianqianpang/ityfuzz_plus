@@ -720,7 +720,6 @@ macro_rules! impl_env_mutator_u256 {
 
             // 有概率直接用pool中的值替换
             if  !pool.is_empty() && state_.rand_mut().below(100) < 50 {
-                // println!("新方法——使用了观察到的pool值变异");
                 let idx = state_.rand_mut().below(pool.len() as u64);
                 let val = pool.iter().nth(idx as usize).unwrap().clone();
                 input.get_vm_env_mut().$loc.$item = val;
@@ -765,7 +764,6 @@ macro_rules! impl_env_mutator_h160 {
 
             // 有概率直接用pool中的值替换
             if !pool.is_empty() && state_.rand_mut().below(100) < 50 {
-                // println!("新方法——使用了观察到的pool值变异");
                 let idx = state_.rand_mut().below(pool.len() as u64);
                 let val = pool.iter().nth(idx as usize).unwrap().clone();
                 input.get_vm_env_mut().$loc.$item = val;
@@ -850,7 +848,6 @@ impl EVMInput {
     {
         // not supported yet
         // unreachable!();这样变异是否合适
-        // println!("新方法——使用了prevrandao变异");
         let new_difficulty = state_.rand_mut().below(1000); // Adjust the range as needed
         input.get_vm_env_mut().block.difficulty = EVMU256::from(new_difficulty);
 
@@ -863,7 +860,6 @@ impl EVMInput {
     {
         // not supported yet
         // unreachable!();
-        // println!("新方法——使用了gas price变异");
         // 原来的值*0-2之间的数
         let current_gas_price = _input.get_vm_env().tx.gas_price;
         let rand_factor_u64 = state_.rand_mut().below(20);
@@ -882,7 +878,6 @@ impl EVMInput {
 
         // not supported yet
         // unreachable!();
-        // println!("新方法——使用了balance变异");
         let current_balance = input.get_vm_env().tx.value;
         let rand_factor_u64 = state_.rand_mut().below(20);
         let rand_factor_u256 = U256::from(rand_factor_u64);
@@ -897,7 +892,6 @@ impl EVMInput {
         where
             S: State + HasCaller<EVMAddress> + HasRand + HasMetadata,
     {
-        // println!("新方法——使用了diffculty变异");
         let new_difficulty = state_.rand_mut().below(1000);
         input.get_vm_env_mut().block.difficulty = EVMU256::from(new_difficulty);
         MutationResult::Mutated
@@ -957,7 +951,6 @@ impl EVMInput {
         macro_rules! add_mutator {
             ($item: ident) => {
                 if ap.$item {
-                    // println!("{}_{} ", mutators.len(),stringify!($item));
                     mutators.push(&EVMInput::$item as &dyn Fn(&mut EVMInput, &mut S) -> MutationResult);
                     mutators_name.push(stringify!($item));
                 }
@@ -965,7 +958,6 @@ impl EVMInput {
 
             ($item: ident, $cond: expr) => {
                 if $cond {
-                    // println!("{}_{} ", mutators.len(),stringify!($item));
                     mutators.push(&EVMInput::$item as &dyn Fn(&mut EVMInput, &mut S) -> MutationResult);
                     mutators_name.push(stringify!($item));
                 }

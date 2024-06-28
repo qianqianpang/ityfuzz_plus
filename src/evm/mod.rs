@@ -36,6 +36,7 @@ use std::{
     rc::Rc,
     str::FromStr,
 };
+use std::sync::atomic::AtomicUsize;
 use std::sync::Mutex;
 
 use blaz::{
@@ -478,9 +479,15 @@ impl OracleType {
         results
     }
 }
+pub(crate) static MUTATE_SUCCESS_COUNT: AtomicUsize = AtomicUsize::new(0);
 lazy_static! {
+    //当前的变异后的覆盖概率
     pub static ref INSTRUCTION_COVERAGE: Mutex<f64> = Mutex::new(0.0);
     pub static ref BRANCH_COVERAGE: Mutex<f64> = Mutex::new(0.0);
+    //覆盖率存储list
+    pub static ref INSTRUCTION_COVERAGE_LIST: Mutex<Vec<f64>> = Mutex::new(Vec::new());
+    pub static ref BRANCH_COVERAGE_LIST: Mutex<Vec<f64>> = Mutex::new(Vec::new());
+
 }
 #[allow(clippy::type_complexity)]
 pub fn evm_main(mut args: EvmArgs) {

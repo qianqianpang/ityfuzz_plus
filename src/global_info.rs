@@ -3,19 +3,26 @@ use std::collections::HashMap;
 use lazy_static::lazy_static;
 use rand::Rng;
 use std::sync::Mutex;
+use crate::evm::{BRANCH_COVERAGE_LIST, INSTRUCTION_COVERAGE_LIST, MUTATE_SUCCESS_COUNT};
+
 pub static IS_OBJECTIVE: AtomicBool = AtomicBool::new(false);
 pub static IS_CMP_INTERESTING: AtomicBool = AtomicBool::new(false);
 pub static IS_DATAFLOW_INTERESTING: AtomicBool = AtomicBool::new(false);
 pub static IS_INSTRUCTION_INTERESTING: AtomicI32 = AtomicI32::new(0);
+pub static IS_BRANCH_COVERAGE_INTERESTING: AtomicBool = AtomicBool::new(false);
+pub static IS_INSTRUCTION_COVERAGE_INTERESTING: AtomicBool = AtomicBool::new(false);
+
 pub static VALUE: AtomicI32 = AtomicI32::new(0);
 
 
 //超参数
 pub static mut RANDOM_P: f64 = 0.2;
-const A: f64 = 3.0;
-const B: f64 = 2.0;
-const C: f64 = 1.0;
-const D: f64 = 1.0;
+const A: f64 = 3.0;//is_objective
+const B: f64 = 2.0;//is_cmp_interesting
+const C: f64 = 2.0;//is_dataflow_interesting
+const D: f64 = 1.0;//is_instruction_interesting
+const E: f64 = 3.0;//is_branch_coverage_interesting
+const F: f64 = 3.0;//is_instruction_coverage_interesting
 
 
 //ptable
@@ -246,48 +253,86 @@ pub fn calculate_value() {
     let is_objective = IS_OBJECTIVE.load(Ordering::SeqCst) as i32;
     let is_cmp_interesting = IS_CMP_INTERESTING.load(Ordering::SeqCst) as i32;
     let is_dataflow_interesting = IS_DATAFLOW_INTERESTING.load(Ordering::SeqCst) as i32;
-    let is_instruction_interesting = IS_INSTRUCTION_INTERESTING.load(Ordering::SeqCst) as i32;
+    let is_instruction_interesting = IS_INSTRUCTION_INTERESTING.load(Ordering::SeqCst) ;
+
+    let mutate_success_count = MUTATE_SUCCESS_COUNT.load(Ordering::SeqCst);
+    if mutate_success_count == 1 {
+        IS_BRANCH_COVERAGE_INTERESTING.store(true, Ordering::SeqCst);
+        IS_INSTRUCTION_COVERAGE_INTERESTING.store(true, Ordering::SeqCst);
+    }
+    else{
+        let mut branch_coverage_list = BRANCH_COVERAGE_LIST.lock().unwrap();
+        let mut instruction_coverage_list = INSTRUCTION_COVERAGE_LIST.lock().unwrap();
+        if mutate_success_count != branch_coverage_list.len() {
+            let last_branch_coverage = *branch_coverage_list.last().unwrap();
+            let last_instruction_coverage = *instruction_coverage_list.last().unwrap();
+            branch_coverage_list.push(last_branch_coverage);
+            instruction_coverage_list.push(last_instruction_coverage);
+        }
+        // println!("mutate_success_count============{}",mutate_success_count );
+        // println!("branch_coverage_list len============{}", branch_coverage_list.len());
+        let branch_coverage = branch_coverage_list.last().unwrap();
+        let instruction_coverage = instruction_coverage_list.last().unwrap();
+        let branch_coverage_last = branch_coverage_list.get(branch_coverage_list.len() - 2).unwrap();
+        let instruction_coverage_last = instruction_coverage_list.get(instruction_coverage_list.len() - 2).unwrap();
+
+        if branch_coverage > branch_coverage_last {
+            IS_BRANCH_COVERAGE_INTERESTING.store(true, Ordering::SeqCst);
+        }
+        if instruction_coverage > instruction_coverage_last {
+            IS_INSTRUCTION_COVERAGE_INTERESTING.store(true, Ordering::SeqCst);
+        }
+    }
+    let is_branch_coverage_interesting = IS_BRANCH_COVERAGE_INTERESTING.load(Ordering::SeqCst) as i32;
+    let is_instruction_coverage_interesting = IS_INSTRUCTION_COVERAGE_INTERESTING.load(Ordering::SeqCst) as i32;
 
     let value = A as i32 * is_objective
         + B as i32 * is_cmp_interesting
         + C as i32 * is_dataflow_interesting
-        + D as i32 * is_instruction_interesting;
+        + D as i32 * is_instruction_interesting
+        + E as i32 * is_branch_coverage_interesting
+        + F as i32 * is_instruction_coverage_interesting;
 
-    // println!("Value=======>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> {}", value);
     VALUE.store(value, Ordering::SeqCst);
 }
 
 
 //更新table
 pub fn adjust_p_table() {
+    // print_mutation_op();
     let value =  VALUE.load(Ordering::SeqCst);
-    // println!("Value==========,,,>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>: {}", value);
     if value >= 1 {
         let mutation_op = MUTATION_OP.lock().unwrap();
-        for (key, value_map) in mutation_op.iter() {
-            for (sub_key, sub_value) in value_map.iter() {
-                // println!("{}: {}", sub_key, sub_value);
-            }}
         let mut p_table = P_TABLE.lock().unwrap();
         for (key, value_map) in mutation_op.iter() {
+            let mut total = 0.0;
             for (sub_key, sub_value) in value_map.iter() {
                 if *sub_value != 0 {
                     if let Some(p_value_map) = p_table.get_mut(*key) {
                         if let Some(p_value) = p_value_map.get_mut(*sub_key) {
-                            if *sub_key == "BitFlipMutator" {
-                                *p_value += *sub_value as f64 /100.0 ;
-                                *p_value += 0.05 ; //多增加的概率为5%
-                            } else {
-                                *p_value += *sub_value as f64 /100.0; // 增加的概率等于MUTATION_OP中的值
-                            }
+                            *p_value += *sub_value as f64 /100.0; // 增加的概率等于MUTATION_OP中的值
+                            total += *p_value;
                         }
+                    }
+                }
+            }
+            // Normalize the probabilities so that the sum is 1
+            if let Some(p_value_map) = p_table.get_mut(*key) {
+                if total == 0.0 {
+                    let equal_value = 1.0 / p_value_map.len() as f64;
+                    for p_value in p_value_map.values_mut() {
+                        *p_value = equal_value;
+                    }
+                } else {
+                    for p_value in p_value_map.values_mut() {
+                        *p_value /= total;
                     }
                 }
             }
         }
     }
     VALUE.store(0, Ordering::SeqCst);
-
+    // print_p_table();
     // Reset all values in MUTATION_OP to 0
     let mut mutation_op = MUTATION_OP.lock().unwrap();
     for (_key, value_map) in mutation_op.iter_mut() {
@@ -296,4 +341,3 @@ pub fn adjust_p_table() {
         }
     }
 }
-pub(crate) static MUTATE_SUCCESS_COUNT: AtomicUsize = AtomicUsize::new(0);

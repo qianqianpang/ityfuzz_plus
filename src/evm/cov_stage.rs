@@ -112,6 +112,7 @@ where
         _manager: &mut EM,
         _corpus_idx: CorpusId,
     ) -> Result<(), Error> {
+        // println!("===============================================================执行coverage stage perform================================================================");
         let last_idx = state.corpus().last();
         if last_idx.is_none() {
             return Ok(());
