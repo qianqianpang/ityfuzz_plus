@@ -240,8 +240,8 @@ where
         }
 
         // use exploit template
+        //if state.has_preset() && state.rand_mut().below(MUTATOR_SAMPLE_MAX) < EXPLOIT_PRESET_CHOICE {}
         if state.has_preset() {
-            // println!("有效~~~~~~~~~~~~~");
             let action_type = "MUTATE_TEMPLATE";
             let action = select_mutation_action(&P_TABLE, action_type, unsafe { RANDOM_P });
             match action {
@@ -289,8 +289,8 @@ where
         let mut mutated = false;
 
         {
+            //if !input.is_step() && state.rand_mut().below(MUTATOR_SAMPLE_MAX) < MUTATE_CALLER_CHOICE {}
             if !input.is_step() {
-                // println!("有效~~~~~MUTATE_STATE~~~~~~~~");
                 let action_type = "MUTATE_STATE";
                 let action = select_mutation_action(&P_TABLE, action_type, unsafe { RANDOM_P });
                 match action {
@@ -319,9 +319,11 @@ where
 
             }
 
+            //if input.get_staged_state().state.has_post_execution() &&
+            //                 !input.is_step() &&
+            //                 state.rand_mut().below(MUTATOR_SAMPLE_MAX) < TURN_TO_STEP_CHOICE{}
             if input.get_staged_state().state.has_post_execution() && !input.is_step()
             {
-                // println!("有效~~~~~~~MUTATE_DATA~~~~~~");
                 let action_type = "MUTATE_DATA";
                 let action = select_mutation_action(&P_TABLE, action_type, unsafe { RANDOM_P });
                 match action {
@@ -360,9 +362,10 @@ where
             // if the input is a step input (resume execution from a control leak)
             // we should not mutate the VM state, but only mutate the bytes
             if input.is_step() {
-                // println!("有效~~~~~闭包  MUTATE_BYTE~~~~~~~~");
                 let action_type = "MUTATE_BYTE";
                 let action = select_mutation_action(&P_TABLE, action_type, unsafe { RANDOM_P });
+                //let res = match state.rand_mut().below(MUTATOR_SAMPLE_MAX) {
+                //                     0..=LIQUIDATE_CHOICE => {}
                 let res =match action {
                     "MUTATE_LIQUIDATE" => {
                         increment_mutation_op("MUTATE_BYTE", "MUTATE_LIQUIDATE");
@@ -399,8 +402,9 @@ where
 
             // if the input is to borrow token, we should mutate the randomness
             // (use to select the paths to buy token), VM state, and bytes
+            //return match state.rand_mut().below(MUTATOR_SAMPLE_MAX) {
+            //                     0..=RANDOMNESS_CHOICE => {}
             if input.get_input_type() == Borrow {
-                // println!("有效~~~~~闭包  MUTATE_BORROW~~~~~~~~");
                 let rand_u8 = state.rand_mut().below(255) as u8;
                 let action_type = "MUTATE_BORROW";
                 let action = select_mutation_action(&P_TABLE, action_type, unsafe { RANDOM_P });
@@ -423,9 +427,11 @@ where
             // mutate the bytes or VM state or liquidation percent (percentage of token to
             // liquidate) by default
 
-            // println!("有效~~~~~闭包  MUTATE_ALL~~~~~~~~");
+
             let action_type = "MUTATE_ALL";
             let action = select_mutation_action(&P_TABLE, action_type, unsafe { RANDOM_P });
+            //match state.rand_mut().below(MUTATOR_SAMPLE_MAX) {
+            //                 0..=LIQUIDATE_CHOICE => {}
             match action {
                 "MUTATE_LIQUIDATION" => {
                     increment_mutation_op("MUTATE_ALL", "MUTATE_LIQUIDATION");
