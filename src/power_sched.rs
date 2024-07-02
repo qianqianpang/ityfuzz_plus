@@ -12,7 +12,7 @@ use libafl::mutators::MutationResult;
 use libafl::prelude::mutational::MutatedTransformPost;
 use libafl_bolts::ErrorBacktrace;
 use plotters::prelude::*;
-
+use std::time::{SystemTime, UNIX_EPOCH};
 use crate::evm::{ACTION_COUNTS, EPSILON, LOSS_VALUES, REWARD_VALUES, SOLUTION_FLAG};
 // use crate::evm::{AGENT, ENV, EPISODES, BATCH_SIZE};
 use crate::global_info::{calculate_value};
@@ -181,40 +181,37 @@ where
         if MUTATE_SUCCESS_COUNT.load(std::sync::atomic::Ordering::SeqCst) % 5000 == 0 {
             // Save the model 画loss图
             agent.model.save("./dqn_net.ot").unwrap();
-            let loss_values = LOSS_VALUES.lock().unwrap();
-            match plot_loss_values(&loss_values) {
-                Ok(_) => (),
-                Err(e) => return Err(Error::Unknown(format!("{}", e), ErrorBacktrace::new())),
-            }
+            // let loss_values = LOSS_VALUES.lock().unwrap();
+            // match plot_loss_values(&loss_values) {
+            //     Ok(_) => (),
+            //     Err(e) => return Err(Error::Unknown(format!("{}", e), ErrorBacktrace::new())),
+            // }
 
             plot_reward_values();
-            let filename = "res/action_counts.png";
-            match plot_action_counts(&ACTION_COUNTS, filename) {
-                Ok(_) => println!("Pie chart saved to {}", filename),
-                Err(e) => eprintln!("Error generating pie chart: {}", e),
-            }
+            // let filename = "res/action_counts.png";
+            // match plot_action_counts(&ACTION_COUNTS, filename) {
+            //     Ok(_) => println!("Pie chart saved to {}", filename),
+            //     Err(e) => eprintln!("Error generating pie chart: {}", e),
+            // }
         }
         // let avg_reward = agent.evaluate(&mut *env, episodes.try_into().unwrap());
         // println!("Average reward: {}", avg_reward);
 
-        calculate_value();
-
-        // adjust_p_table();
         ret
     }
 }
+
+
 pub fn plot_reward_values() -> Result<(), Box<dyn std::error::Error>> {
-    let root = BitMapBackend::new("res/rewards.png", (640, 480)).into_drawing_area();
+    let start = SystemTime::now();
+    let since_the_epoch = start.duration_since(UNIX_EPOCH)
+        .expect("Time went backwards");
+    let timestamp_str = format!("{}", since_the_epoch.as_secs());
+
+    let filename = format!("res/rewards_{}.png", timestamp_str);
+
+    let root = BitMapBackend::new(&filename, (640, 480)).into_drawing_area();
     root.fill(&WHITE)?;
-
-    let mut chart = ChartBuilder::on(&root)
-        .caption("Reward Values Over Time", ("Arial", 20).into_font())
-        .margin(5)
-        .x_label_area_size(30)
-        .y_label_area_size(30)
-        .build_ranged(0f32..100f32, 0f32..100f32)?;
-
-    chart.configure_mesh().draw()?;
 
     let reward_values = REWARD_VALUES.lock().unwrap();
     let data: Vec<(f32, f32)> = (*reward_values)
@@ -222,6 +219,17 @@ pub fn plot_reward_values() -> Result<(), Box<dyn std::error::Error>> {
         .enumerate()
         .map(|(i, val)| (i as f32, *val as f32))
         .collect();
+
+    let max_x = data.len() as f32;
+
+    let mut chart = ChartBuilder::on(&root)
+        .caption("Reward Values Over Time", ("Arial", 20).into_font())
+        .margin(5)
+        .x_label_area_size(30)
+        .y_label_area_size(30)
+        .build_ranged(0f32..max_x, 0f32..100f32)?;
+
+    chart.configure_mesh().draw()?;
 
     chart.draw_series(LineSeries::new(data, &RED))?;
 

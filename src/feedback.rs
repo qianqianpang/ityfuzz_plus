@@ -8,6 +8,7 @@ use std::{
 };
 
 use libafl::{
+    Error,
     events::EventFirer,
     executors::ExitKind,
     inputs::Input,
@@ -15,15 +16,11 @@ use libafl::{
     prelude::{Feedback, HasMetadata, UsesInput},
     schedulers::Scheduler,
     state::{HasCorpus, State},
-    Error,
 };
 use libafl_bolts::{impl_serdeany, Named};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use tracing::debug;
 
-/// Implements the feedback mechanism needed by ItyFuzz.
-/// Implements Oracle, Comparison, Dataflow feedbacks.
-use crate::generic_vm::vm_executor::{GenericVM, MAP_SIZE};
 use crate::{
     fuzzer::ORACLE_OUTPUT,
     generic_vm::vm_state::VMStateT,
@@ -33,6 +30,9 @@ use crate::{
     scheduler::HasVote,
     state::{HasExecutionResult, HasInfantStateState, InfantStateState},
 };
+/// Implements the feedback mechanism needed by ItyFuzz.
+/// Implements Oracle, Comparison, Dataflow feedbacks.
+use crate::generic_vm::vm_executor::{GenericVM, MAP_SIZE};
 
 /// OracleFeedback is a wrapper around a set of oracles and producers.
 /// It executes the producers and then oracles after each successful execution.
@@ -401,7 +401,47 @@ where
         Ok(interesting)
     }
 }
+// 创建一个新的trait，包含你需要的方法
+pub trait FeedbackExt1 {
+    fn dataflow_interestingness(&mut self) -> Result<i32, Error>;
+}
 
+// 为DataflowFeedback实现新的trait
+#[cfg(feature = "dataflow")]
+impl<'a, VS, Loc, Addr, Out, CI> FeedbackExt1 for DataflowFeedback<'a, VS, Loc, Addr, Out, CI>
+where
+    VS: Default + VMStateT,
+    Addr: Serialize + DeserializeOwned + Debug + Clone,
+    Loc: Serialize + DeserializeOwned + Debug + Clone,
+    Out: Default + Into<Vec<u8>> + Clone,
+    CI: Serialize + DeserializeOwned + Debug + Clone + ConciseSerde,
+{
+    fn dataflow_interestingness(&mut self) -> Result<i32, Error> {
+        let mut degree = 0;
+        for i in 0..MAP_SIZE {
+            if self.read_map[i] && self.write_map[i] != 0 {
+                let category = if self.write_map[i] < (2 << 2) {
+                    0
+                } else if self.write_map[i] < (2 << 4) {
+                    1
+                } else if self.write_map[i] < (2 << 6) {
+                    2
+                } else {
+                    3
+                };
+                if !self.global_write_map[i % MAP_SIZE][category] {
+                    degree += 1;
+                    self.global_write_map[i % MAP_SIZE][category] = true;
+                }
+            }
+        }
+
+        for i in 0..MAP_SIZE {
+            self.write_map[i] = 0;
+        }
+        Ok(degree)
+    }
+}
 /// CmpFeedback is a feedback that uses cmp analysis to determine
 /// whether a state is interesting or not.
 ///
@@ -593,6 +633,33 @@ where
     }
 }
 
+pub trait FeedbackExt2 {
+    fn cmp_interestingness(&mut self) -> Result<i32, Error>;
+}
+
+// 为CmpFeedback实现新的trait
+#[cfg(feature = "cmp")]
+impl<'a, VS, Addr, Code, By, Loc, SlotTy, Out, I, S, SC, CI> FeedbackExt2 for CmpFeedback<'a, VS, Addr, Code, By, Loc, SlotTy, Out, I, S, SC, CI>
+where
+    SC: Scheduler<State = InfantStateState<Loc, Addr, VS, CI>> + HasVote<InfantStateState<Loc, Addr, VS, CI>>,
+    VS: Default + VMStateT,
+    SlotTy: PartialOrd + Copy,
+    Addr: Serialize + DeserializeOwned + Debug + Clone,
+    Loc: Serialize + DeserializeOwned + Debug + Clone,
+    Out: Default + Into<Vec<u8>> + Clone,
+    CI: Serialize + DeserializeOwned + Debug + Clone + ConciseSerde,
+{
+    fn cmp_interestingness(&mut self) -> Result<i32, Error> {
+        let mut degree = 0;
+        for i in 0..MAP_SIZE {
+            if self.current_map[i] < self.min_map[i] {
+                degree += 1;
+                self.min_map[i] = self.current_map[i];
+            }
+        }
+        Ok(degree)
+    }
+}
 /// Metadata for Coverage Comparisons
 ///
 /// This is metadata attached to the global fuzz state

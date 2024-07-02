@@ -1,5 +1,5 @@
 use crate::power_sched::plot_reward_values;
-use crate::global_info::print_p_table;
+use crate::global_info::{calculate_value, print_p_table};
 use std::{
     collections::{hash_map::DefaultHasher, HashMap},
     env,
@@ -56,6 +56,7 @@ use crate::{
     state::{HasCurrentInputIdx, HasExecutionResult, HasInfantStateState, HasItyState, InfantStateState},
 };
 use crate::evm::{BRANCH_COVERAGE, FUZZ_MUTATION_COUNTS, INSTRUCTION_COVERAGE, MUTATE_SUCCESS_COUNT, SOLUTION_FLAG, XUNHUAN_FLAG};
+use crate::feedback::{FeedbackExt1, FeedbackExt2};
 use crate::global_info::{IS_CMP_INTERESTING, IS_DATAFLOW_INTERESTING, IS_OBJECTIVE};
 
 pub static mut RUN_FOREVER: bool = false;
@@ -264,6 +265,9 @@ where
         stages
             .perform_all(self, executor, state, manager, idx)
             .expect("perform_all failed");
+
+        calculate_value();
+
         manager.process(self, state, executor)?;
         Ok(idx)
     }
@@ -375,8 +379,8 @@ where
     CS: Scheduler<State = S> + RemovableScheduler,
     IS: Scheduler<State = InfantStateState<Loc, Addr, VS, CI>> + HasReportCorpus<InfantStateState<Loc, Addr, VS, CI>>,
     F: Feedback<S>,
-    IF: Feedback<S>,
-    IFR: Feedback<S>,
+    IF: Feedback<S> + FeedbackExt2,
+    IFR: Feedback<S> + FeedbackExt1,
     E: Executor<EM, Self, State = S> + HasObservers<Observers = OT>,
     OT: ObserversTuple<S> + serde::Serialize + serde::de::DeserializeOwned,
     EM: EventManager<E, Self, State = S>,
@@ -434,6 +438,9 @@ where
             .infant_feedback
             .is_interesting(state, manager, &input, observers, &exitkind)?;
         IS_CMP_INTERESTING.store(is_infant_interesting, Ordering::SeqCst);
+        // let infant_interestingness = self.infant_feedback.cmp_interestingness().unwrap();
+        // CMP_INTERESTINGNESS.store(infant_interestingness, Ordering::SeqCst);
+
 
         let is_solution = self
             .objective
@@ -444,6 +451,12 @@ where
             .infant_result_feedback
             .is_interesting(state, manager, &input, observers, &exitkind)?;
         IS_DATAFLOW_INTERESTING.store(is_infant_solution, Ordering::SeqCst);
+        // let infant_solution_interestingness = self.infant_result_feedback.dataflow_interestingness().unwrap();
+        // DATAFLOW_INTERESTINGNESS.store(infant_solution_interestingness, Ordering::SeqCst);
+        // println!("interestingness=====================:{},{}", infant_solution_interestingness,infant_interestingness);
+        // if infant_interestingness > 0 || infant_solution_interestingness > 0 {
+        //     exit(2);
+        // }
 
         // add the trace of the new state
         #[cfg(any(feature = "print_infant_corpus", feature = "print_txn_corpus"))]

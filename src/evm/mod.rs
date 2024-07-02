@@ -519,7 +519,9 @@ lazy_static! {
 
     pub static ref INSTRUCTION_COVERAGE: Mutex<f64> = Mutex::new(0.0);
     pub static ref BRANCH_COVERAGE: Mutex<f64> = Mutex::new(0.0);
-
+    //覆盖率存储list
+    pub static ref INSTRUCTION_COVERAGE_LIST: Mutex<Vec<f64>> = Mutex::new(Vec::new());
+    pub static ref BRANCH_COVERAGE_LIST: Mutex<Vec<f64>> = Mutex::new(Vec::new());
 }
 
 
@@ -549,7 +551,7 @@ fn plot_fuzz_mutation_counts() -> Result<(), Box<dyn std::error::Error>> {
 }
 #[allow(clippy::type_complexity)]
 pub fn evm_main(mut args: EvmArgs) {
-    for _ in 0..100 {
+    for _ in 0..1 {
         MUTATE_SUCCESS_COUNT.store(0, Ordering::SeqCst);
         SOLUTION_FLAG.store(0, Ordering::SeqCst);
 
