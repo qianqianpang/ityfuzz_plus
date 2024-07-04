@@ -12,7 +12,9 @@ use std::{
     time::Duration,
 };
 use std::sync::atomic::Ordering;
-
+use std::time::SystemTime;
+use chrono::{DateTime, Local};
+use csv::{Writer, WriterBuilder};
 use itertools::Itertools;
 use libafl::{
     fuzzer::Fuzzer,
@@ -588,6 +590,32 @@ where
                 println!("Instruction Coverage: {}%, Branch Coverage: {}%", *instruction_coverage,*branch_coverage);
                 print_p_table();
 
+
+                //写入文件
+                let file = std::fs::OpenOptions::new()
+                    .write(true)
+                    .append(true)
+                    .create(true)
+                    .open("D:/rust_projects/ityfuzz_old/runtime_res.csv")
+                    .map_err(|e| libafl::Error::Unknown(format!("{}", e), Default::default()))?;
+
+                let mut wtr = csv::Writer::from_writer(file);
+                let now: DateTime<Local> = Local::now();
+                let current_time = now.format("%Y-%m-%d %H:%M:%S").to_string();
+                match wtr.write_record(&[
+                    &current_time, // 时间
+                    &success_count.to_string(), // 变异次数
+                    &instruction_coverage.to_string() , // 指令覆盖率
+                    &branch_coverage.to_string(), // 分支覆盖率
+                ]) {
+                    Ok(_) => (),
+                    Err(e) => return Err(libafl::Error::Unknown(format!("{}", e), Default::default())),
+                };
+
+                match wtr.flush() {
+                    Ok(_) => (),
+                    Err(e) => return Err(libafl::Error::Unknown(format!("{}", e), Default::default())),
+                };
                 let cur_report =
                     format!(
                     "================ Description ================\n{}\n================ Trace ================\n{}\n",
