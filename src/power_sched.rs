@@ -5,7 +5,7 @@ use core::{fmt::Debug, marker::PhantomData};
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
 use std::sync::Mutex;
-use crate::evm::MUTATE_SUCCESS_COUNT;
+use crate::evm::MUTATE_COUNT;
 use lazy_static::lazy_static;
 use libafl::{corpus::{Corpus, CorpusId}, Error, ExecuteInputResult, executors::{Executor, HasObservers}, fuzzer::Evaluator, mark_feature_time, mutators::Mutator, prelude::Testcase, stages::{mutational::MutatedTransform, MutationalStage, Stage}, start_timer, state::{ HasCorpus, HasMetadata, HasRand, UsesState}};
 use libafl::mutators::MutationResult;
@@ -149,12 +149,12 @@ where
         manager: &mut EM,
         corpus_idx: CorpusId,
     ) -> Result<(), Error> {
-        MUTATE_SUCCESS_COUNT.fetch_add(1, Ordering::SeqCst);
-        println!("===============================================================执行mutate stage perform======================================================================");
+        MUTATE_COUNT.fetch_add(1, Ordering::SeqCst);
+        println!(">>>>>>执行mutate stage perform");
 
         //dqn_1
         let mut env = crate::evm::ENV.lock().unwrap();
-        let episodes = *crate::evm::EPISODES.lock().unwrap();
+        // let episodes = *crate::evm::EPISODES.lock().unwrap();
         let batch_size = *crate::evm::BATCH_SIZE.lock().unwrap();
         let mut agent = crate::evm::AGENT.lock().unwrap();
         // let mut var_store = VAR_STORE.lock().unwrap();
@@ -162,8 +162,7 @@ where
         // let mut agent = DQNAgent::new_from_model(&mut var_store, "./test_model", *crate::evm::STATE_DIM.lock().unwrap() as i64, *crate::evm::ACTION_DIM.lock().unwrap() as i64, *crate::evm::REPLAY_BUFFER_CAPACITY.lock().unwrap() as usize).unwrap();
 
         let mut state_tensor = env.reset();
-        // let epsilon = 0.8;
-        let mut epsilon = EPSILON.lock().unwrap();
+        let mut epsilon = EPSILON.lock().unwrap();//贪心程度，平衡利用和搜索
         let (action,action_index) = agent.get_action(&state_tensor, *epsilon);
         env.step_1(action);
 
@@ -175,25 +174,23 @@ where
         agent.replay_buffer.push(state_tensor, action_index, reward, next_state.clone(&next_state));
         state_tensor=next_state;
         agent.update_model(batch_size as usize);
-        //
-        // *epsilon = (*epsilon * *EPSILON_DECAY.lock().unwrap()).max(*FINAL_EPSILON.lock().unwrap());
-        println!("update model===========");
-        if MUTATE_SUCCESS_COUNT.load(std::sync::atomic::Ordering::SeqCst) % 5000 == 0 {
-            // Save the model 画loss图
-            agent.model.save("./dqn_net.ot").unwrap();
-            // let loss_values = LOSS_VALUES.lock().unwrap();
-            // match plot_loss_values(&loss_values) {
-            //     Ok(_) => (),
-            //     Err(e) => return Err(Error::Unknown(format!("{}", e), ErrorBacktrace::new())),
-            // }
 
-            plot_reward_values();
-            // let filename = "res/action_counts.png";
-            // match plot_action_counts(&ACTION_COUNTS, filename) {
-            //     Ok(_) => println!("Pie chart saved to {}", filename),
-            //     Err(e) => eprintln!("Error generating pie chart: {}", e),
-            // }
-        }
+        // *epsilon = (*epsilon * *EPSILON_DECAY.lock().unwrap()).max(*FINAL_EPSILON.lock().unwrap());
+        println!(">>update model");
+        // if MUTATE_COUNT.load(std::sync::atomic::Ordering::SeqCst) % 5000 == 0 {
+        //     agent.model.save("./dqn_net.ot").unwrap();
+        //
+        //     // let loss_values = LOSS_VALUES.lock().unwrap();
+        //     // match plot_loss_values(&loss_values) {
+        //     //     Ok(_) => (),
+        //     //     Err(e) => return Err(Error::Unknown(format!("{}", e), ErrorBacktrace::new())),
+        //     // }
+        //     // let filename = "res/action_counts.png";
+        //     // match plot_action_counts(&ACTION_COUNTS, filename) {
+        //     //     Ok(_) => println!("Pie chart saved to {}", filename),
+        //     //     Err(e) => eprintln!("Error generating pie chart: {}", e),
+        //     // }
+        // }
         // let avg_reward = agent.evaluate(&mut *env, episodes.try_into().unwrap());
         // println!("Average reward: {}", avg_reward);
 
@@ -235,30 +232,30 @@ pub fn plot_reward_values() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
-fn plot_action_counts(action_counts: &Mutex<HashMap<i32, i64>>, filename: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let action_counts = action_counts.lock().unwrap();
-
-    let root = BitMapBackend::new(filename, (640, 480)).into_drawing_area();
-    root.fill(&WHITE)?;
-
-    let mut chart = ChartBuilder::on(&root)
-        .caption("Action Counts", ("sans-serif", 50).into_font())
-        .build_cartesian_2d(0i32..(action_counts.len() as i32), 0i64..*action_counts.values().max().unwrap())?;
-
-    chart.configure_mesh().draw()?;
-
-    let total: i64 = action_counts.values().sum();
-    let mut idx = 0;
-    for (action, count) in action_counts.iter() {
-        chart.draw_series(std::iter::once(Rectangle::new(
-            [(idx, 0), (idx + 1, *count)],
-            *&Palette99::pick(*action as usize).filled(),
-        )))?;
-        idx += 1;
-    }
-
-    Ok(())
-}
+// fn plot_action_counts(action_counts: &Mutex<HashMap<i32, i64>>, filename: &str) -> Result<(), Box<dyn std::error::Error>> {
+//     let action_counts = action_counts.lock().unwrap();
+//
+//     let root = BitMapBackend::new(filename, (640, 480)).into_drawing_area();
+//     root.fill(&WHITE)?;
+//
+//     let mut chart = ChartBuilder::on(&root)
+//         .caption("Action Counts", ("sans-serif", 50).into_font())
+//         .build_cartesian_2d(0i32..(action_counts.len() as i32), 0i64..*action_counts.values().max().unwrap())?;
+//
+//     chart.configure_mesh().draw()?;
+//
+//     let total: i64 = action_counts.values().sum();
+//     let mut idx = 0;
+//     for (action, count) in action_counts.iter() {
+//         chart.draw_series(std::iter::once(Rectangle::new(
+//             [(idx, 0), (idx + 1, *count)],
+//             *&Palette99::pick(*action as usize).filled(),
+//         )))?;
+//         idx += 1;
+//     }
+//
+//     Ok(())
+// }
 pub fn plot_loss_values(loss_values: &[f32]) -> Result<(), Box<dyn std::error::Error>> {
     let root = BitMapBackend::new("res/loss/new.png", (640, 480)).into_drawing_area();
     root.fill(&WHITE)?;

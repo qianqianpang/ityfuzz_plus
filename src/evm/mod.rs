@@ -484,6 +484,7 @@ impl OracleType {
     }
 }
 lazy_static! {
+    //dqn相关
     pub static ref STATE_DIM: Mutex<i32> = Mutex::new(4);
     pub static ref ACTION_DIM: Mutex<i32> = Mutex::new(16);
     pub static ref REPLAY_BUFFER_CAPACITY: Mutex<i32> = Mutex::new(10000);
@@ -506,31 +507,31 @@ lazy_static! {
     pub static ref FINAL_EPSILON: Mutex<f64> = Mutex::new(0.01);
     pub static ref EPSILON_DECAY: Mutex<f64> = Mutex::new(0.95);
 
-    pub static ref ACTION_COUNTS: Mutex<HashMap<i32, i64>> = Mutex::new(HashMap::new());
-    pub static ref XUNHUAN_FLAG: AtomicBool = AtomicBool::new(false);
-    // pub static ref GLOBAL_CONFIG: Mutex<Option<Config>> = Mutex::new(None);
-
+    //当前fuzz的轮数，当前fuzz是否找到了bug
     static ref FUZZ_COUNT: AtomicUsize = AtomicUsize::new(0);
     pub static ref SOLUTION_FLAG: AtomicUsize = AtomicUsize::new(0);
 
-    pub static ref FUZZ_MUTATION_COUNTS: Mutex<Vec<usize>> = Mutex::new(Vec::new());
-    pub static ref MUTATE_SUCCESS_COUNT: AtomicUsize = AtomicUsize::new(0);
+    //变异次数和存储变异次数的vector
+    pub static ref MUTATE_COUNT: AtomicUsize = AtomicUsize::new(0);
+    pub static ref MUTATE_COUNTS_VEC: Mutex<Vec<usize>> = Mutex::new(Vec::new());
 
-
+    //当前的两个覆盖概率  ,覆盖率存储的vector
     pub static ref INSTRUCTION_COVERAGE: Mutex<f64> = Mutex::new(0.0);
     pub static ref BRANCH_COVERAGE: Mutex<f64> = Mutex::new(0.0);
-    //覆盖率存储list
     pub static ref INSTRUCTION_COVERAGE_LIST: Mutex<Vec<f64>> = Mutex::new(Vec::new());
     pub static ref BRANCH_COVERAGE_LIST: Mutex<Vec<f64>> = Mutex::new(Vec::new());
+
+    //每个action编号及对应的使用次数
+    pub static ref ACTION_COUNTS: Mutex<HashMap<i32, i64>> = Mutex::new(HashMap::new());
 }
 
 
 
-fn plot_fuzz_mutation_counts() -> Result<(), Box<dyn std::error::Error>> {
+fn plot_mutate_counts_vec() -> Result<(), Box<dyn std::error::Error>> {
     let root = BitMapBackend::new("res/fuzz_mutation_counts.png", (640, 480)).into_drawing_area();
     root.fill(&WHITE)?;
 
-    let counts = FUZZ_MUTATION_COUNTS.lock().unwrap();
+    let counts = MUTATE_COUNTS_VEC.lock().unwrap();
     let max_count = *counts.iter().max().unwrap_or(&0);
 
     let mut chart = ChartBuilder::on(&root)
@@ -551,8 +552,8 @@ fn plot_fuzz_mutation_counts() -> Result<(), Box<dyn std::error::Error>> {
 }
 #[allow(clippy::type_complexity)]
 pub fn evm_main(mut args: EvmArgs) {
-    for _ in 0..1 {
-        MUTATE_SUCCESS_COUNT.store(0, Ordering::SeqCst);
+    // for _ in 0..1 {
+        MUTATE_COUNT.store(0, Ordering::SeqCst);
         SOLUTION_FLAG.store(0, Ordering::SeqCst);
 
         args.setup_file = args.deployment_script.clone();
@@ -915,11 +916,11 @@ pub fn evm_main(mut args: EvmArgs) {
         utils::try_write_file(&abis_json, &json_str, true).unwrap();
         evm_fuzzer(config, &mut state);
 
-        // 增加fuzz次数
+        // fuzz轮数++
         FUZZ_COUNT.fetch_add(1, Ordering::SeqCst);
         println!("👉👉👉👉👉👉👉👉👉又执行了一次......");
-        plot_fuzz_mutation_counts().expect("plot error");
-    }
+        plot_mutate_counts_vec().expect("plot error");
+    // }
 
 
     // #[test]

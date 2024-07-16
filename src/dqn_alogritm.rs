@@ -54,20 +54,6 @@ pub fn set_global_input(new_input: EVMInput) {
 //GLOBAL_MUTATION==========================================================================================================================
 lazy_static! {
     pub static ref GLOBAL_MUTATION: Mutex<i64> = Mutex::new(0);
-}
-
-pub fn set_global_mutation(value: i32) {
-    // let mut global_mutation = GLOBAL_MUTATION.lock().unwrap();
-    // *global_mutation = value;
-    let nums = read_nums_from_csv("action.csv").unwrap();
-    let value_str= value.to_string();
-    let value_nums: Vec<i64> = nums.into_iter().filter(|num| num.to_string().starts_with(&value_str)).collect();
-    let len = value_nums.len();
-    let ran_idx= rand::thread_rng().gen_range(0..len);
-    let ran_value = value_nums[ran_idx];
-    *GLOBAL_MUTATION.lock().unwrap() = ran_value;
-}
-lazy_static! {
     pub static ref MUTATOR_SELECTION: Mutex<HashMap<&'static str, u8>> = {
         let mut m = HashMap::new();
         m.insert("0_mutate_mode", 0);
@@ -80,6 +66,17 @@ lazy_static! {
         Mutex::new(m)
     };
 }
+
+pub fn set_global_mutation(value: i32) {
+    let nums = read_nums_from_csv("action.csv").unwrap();
+    let value_str= value.to_string();
+    let value_nums: Vec<i64> = nums.into_iter().filter(|num| num.to_string().starts_with(&value_str)).collect();
+    let len = value_nums.len();
+    let ran_idx= rand::thread_rng().gen_range(0..len);
+    let ran_value = value_nums[ran_idx];
+    *GLOBAL_MUTATION.lock().unwrap() = ran_value;
+}
+
 pub fn set_mutator_selection() -> HashMap<&'static str, u8> {
     let global_mutation = *GLOBAL_MUTATION.lock().unwrap();
     let global_mutation_string = global_mutation.to_string();
@@ -111,8 +108,6 @@ lazy_static! {
     //最大值  520190016，可能要改为f32  f64??????
     static ref ACTIONS: Mutex<Vec<i64>> = Mutex::new(Vec::new());
 }
-
-
 
 fn read_nums_from_csv(file_path: &str) -> Result<Vec<i64>, Box<dyn Error>> {
     let mut reader = Reader::from_path(file_path)?;

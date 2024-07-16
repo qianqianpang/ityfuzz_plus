@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 use lazy_static::lazy_static;
 use rand::Rng;
-use crate::evm::{BRANCH_COVERAGE, BRANCH_COVERAGE_LIST, INSTRUCTION_COVERAGE, INSTRUCTION_COVERAGE_LIST, MUTATE_SUCCESS_COUNT};
+use crate::evm::{BRANCH_COVERAGE, BRANCH_COVERAGE_LIST, INSTRUCTION_COVERAGE, INSTRUCTION_COVERAGE_LIST, MUTATE_COUNT};
 
 pub static IS_OBJECTIVE: AtomicBool = AtomicBool::new(false);
 pub static IS_CMP_INTERESTING: AtomicBool = AtomicBool::new(false);
@@ -287,7 +287,7 @@ pub fn calculate_value() {
     let is_dataflow_interesting = IS_DATAFLOW_INTERESTING.load(Ordering::SeqCst) as i32;
     let is_instruction_interesting = IS_INSTRUCTION_INTERESTING.load(Ordering::SeqCst) ;
 
-    let mutate_success_count = MUTATE_SUCCESS_COUNT.load(Ordering::SeqCst);
+    let mutate_success_count = MUTATE_COUNT.load(Ordering::SeqCst);
     if mutate_success_count == 1 {
         IS_BRANCH_COVERAGE_INTERESTING.store(true, Ordering::SeqCst);
         IS_INSTRUCTION_COVERAGE_INTERESTING.store(true, Ordering::SeqCst);
@@ -296,8 +296,18 @@ pub fn calculate_value() {
         let mut branch_coverage_list = BRANCH_COVERAGE_LIST.lock().unwrap();
         let mut instruction_coverage_list = INSTRUCTION_COVERAGE_LIST.lock().unwrap();
         if mutate_success_count != branch_coverage_list.len() {
-            let last_branch_coverage = *branch_coverage_list.last().unwrap();
-            let last_instruction_coverage = *instruction_coverage_list.last().unwrap();
+            let last_branch_coverage = match branch_coverage_list.last() {
+                Some(last_coverage) => *last_coverage,
+                None => {
+                    0.0
+                }
+            };
+            let last_instruction_coverage = match instruction_coverage_list.last() {
+                Some(last_coverage) => *last_coverage,
+                None => {
+                    0.0
+                }
+            };
             branch_coverage_list.push(last_branch_coverage);
             instruction_coverage_list.push(last_instruction_coverage);
         }
@@ -305,14 +315,36 @@ pub fn calculate_value() {
         // println!("branch_coverage_list len============{}", branch_coverage_list.len());
         let branch_coverage = branch_coverage_list.last().unwrap();
         let instruction_coverage = instruction_coverage_list.last().unwrap();
-        let branch_coverage_last = branch_coverage_list.get(branch_coverage_list.len() - 2).unwrap();
-        let instruction_coverage_last = instruction_coverage_list.get(instruction_coverage_list.len() - 2).unwrap();
+        let branch_coverage_last = if branch_coverage_list.len() > 1 {
+            Some(*branch_coverage_list.get(branch_coverage_list.len() - 2).unwrap())
+        } else {
+            None
+        };
 
-        if branch_coverage > branch_coverage_last {
-            IS_BRANCH_COVERAGE_INTERESTING.store(true, Ordering::SeqCst);
+        let instruction_coverage_last = if instruction_coverage_list.len() > 1 {
+            Some(*instruction_coverage_list.get(instruction_coverage_list.len() - 2).unwrap())
+        } else {
+            None
+        };
+
+        match branch_coverage_last {
+            Some(last_coverage) => {
+                if branch_coverage > &last_coverage {
+                    IS_BRANCH_COVERAGE_INTERESTING.store(true, Ordering::SeqCst);
+                }
+            },
+            None => {
+            }
         }
-        if instruction_coverage > instruction_coverage_last {
-            IS_INSTRUCTION_COVERAGE_INTERESTING.store(true, Ordering::SeqCst);
+
+        match instruction_coverage_last {
+            Some(last_coverage) => {
+                if instruction_coverage > &last_coverage {
+                    IS_INSTRUCTION_COVERAGE_INTERESTING.store(true, Ordering::SeqCst);
+                }
+            },
+            None => {
+            }
         }
     }
     let is_branch_coverage_interesting = IS_BRANCH_COVERAGE_INTERESTING.load(Ordering::SeqCst) as i32;

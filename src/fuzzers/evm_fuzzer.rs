@@ -89,7 +89,6 @@ pub fn evm_fuzzer(
     state: &mut EVMFuzzState,
 ) {
     info!("\n\n ================ EVM Fuzzer Start ===================\n\n");
-
     // create work dir if not exists
     let _path = Path::new(config.work_dir.as_str());
 
@@ -557,7 +556,7 @@ pub fn evm_fuzzer(
             } else {
                 error!("{}", rv);
             }
-            // exit(1);
+            exit(1);
         }
         Some(_) => {
             unsafe {
