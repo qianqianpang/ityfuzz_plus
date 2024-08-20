@@ -37,7 +37,7 @@ use std::{
     str::FromStr,
 };
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Once};
 
 use blaz::{
     builder::{BuildJob, BuildJobResult},
@@ -52,6 +52,7 @@ use input::{ConciseEVMInput, EVMInput};
 use itertools::Itertools;
 use lazy_static::lazy_static;
 use num_cpus;
+use once_cell::sync::OnceCell;
 use plotters::prelude::*;
 use onchain::endpoints::{Chain, OnChainConfig};
 use oracles::{erc20::IERC20OracleFlashloan, v2_pair::PairBalanceOracle};
@@ -60,9 +61,10 @@ use revm_primitives::B160;
 // use revm_primitives::ruint::aliases::B160;
 use serde::Deserialize;
 use serde_json::json;
-use tch::Device;
+use tch::{Device, Tensor};
 use tch::nn::VarStore;
 use tracing::debug;
+use tracing::log::error;
 use types::{EVMAddress, EVMFuzzState, EVMU256};
 use vm::EVMState;
 
@@ -487,25 +489,37 @@ lazy_static! {
     //dqn相关
     pub static ref STATE_DIM: Mutex<i32> = Mutex::new(4);
     pub static ref ACTION_DIM: Mutex<i32> = Mutex::new(16);
+    pub static ref LEARNING_RATE: Mutex<f32> = Mutex::new(1e-7);
+    pub static ref DISCOUNT_FACTOR: Mutex<f64> = Mutex::new(0.5);//向前看多远
     pub static ref REPLAY_BUFFER_CAPACITY: Mutex<i32> = Mutex::new(10000);
-    pub static ref EPISODES: Mutex<i64> = Mutex::new(10000000000);
     pub static ref BATCH_SIZE: Mutex<i32> = Mutex::new(256);
-
-    pub static ref ENV: Mutex<FuzzEnv> = Mutex::new(FuzzEnv::new());
-    pub static ref VS: Arc<Mutex<VarStore>> = Arc::new(Mutex::new(VarStore::new(Device::Cpu)));
-    pub static ref AGENT: Arc<Mutex<DQNAgent>> = Arc::new(Mutex::new(
-        DQNAgent::new(
-            VS.clone(),
-            (*STATE_DIM.lock().unwrap()).into(),
-            (*ACTION_DIM.lock().unwrap()).into(),
-            (*REPLAY_BUFFER_CAPACITY.lock().unwrap()).try_into().unwrap()
-        )
-    ));
-    pub static ref LOSS_VALUES: Mutex<Vec<f32>> = Mutex::new(Vec::new());
-    pub static ref REWARD_VALUES: Mutex<Vec<i32>> = Mutex::new(Vec::new());
-    pub static ref EPSILON: Mutex<f64> = Mutex::new(0.6);
+    pub static ref EPISODES: Mutex<i64> = Mutex::new(10000000000);
+    pub static ref EPSILON: Mutex<f64> = Mutex::new(0.6);//贪心程度，平衡利用和搜索
     pub static ref FINAL_EPSILON: Mutex<f64> = Mutex::new(0.01);
     pub static ref EPSILON_DECAY: Mutex<f64> = Mutex::new(0.95);
+
+    pub static ref ENV: Mutex<FuzzEnv> = Mutex::new(FuzzEnv::new());
+    pub static ref STATE: Mutex<Tensor> = Mutex::new(ENV.lock().unwrap().reset());
+    pub static ref VS: Arc<Mutex<VarStore>> = Arc::new(Mutex::new(VarStore::new(Device::Cpu)));
+    pub static ref AGENT: Arc<Mutex<DQNAgent>> = {
+        static INIT: Once = Once::new();
+        let agent = Arc::new(Mutex::new(
+            DQNAgent::new(
+                VS.clone(),
+                (*STATE_DIM.lock().unwrap()).into(),
+                (*ACTION_DIM.lock().unwrap()).into(),
+                (*REPLAY_BUFFER_CAPACITY.lock().unwrap()).try_into().unwrap()
+            )
+        ));
+         INIT.call_once(|| {
+            // Perform any additional initialization if needed
+        });
+        agent
+    };
+
+    pub static ref LOSS_VALUES: Mutex<Vec<f32>> = Mutex::new(Vec::new());
+    pub static ref REWARD_VALUES: Mutex<Vec<i32>> = Mutex::new(Vec::new());
+
 
     //当前fuzz的轮数，当前fuzz是否找到了bug
     static ref FUZZ_COUNT: AtomicUsize = AtomicUsize::new(0);
@@ -524,7 +538,6 @@ lazy_static! {
     //每个action编号及对应的使用次数
     pub static ref ACTION_COUNTS: Mutex<HashMap<i32, i64>> = Mutex::new(HashMap::new());
 }
-
 
 
 fn plot_mutate_counts_vec() -> Result<(), Box<dyn std::error::Error>> {
@@ -553,373 +566,373 @@ fn plot_mutate_counts_vec() -> Result<(), Box<dyn std::error::Error>> {
 #[allow(clippy::type_complexity)]
 pub fn evm_main(mut args: EvmArgs) {
     // for _ in 0..1 {
-        MUTATE_COUNT.store(0, Ordering::SeqCst);
-        SOLUTION_FLAG.store(0, Ordering::SeqCst);
+    MUTATE_COUNT.store(0, Ordering::SeqCst);
+    SOLUTION_FLAG.store(0, Ordering::SeqCst);
 
-        args.setup_file = args.deployment_script.clone();
-        let target = args.target.clone();
-        if !args.base_directory.is_empty() {
-            std::env::set_current_dir(args.base_directory.clone()).unwrap();
-        }
+    args.setup_file = args.deployment_script.clone();
+    let target = args.target.clone();
+    if !args.base_directory.is_empty() {
+        std::env::set_current_dir(args.base_directory.clone()).unwrap();
+    }
 
-        let work_dir = args.work_dir.clone();
-        let work_path = Path::new(work_dir.as_str());
-        let _ = std::fs::create_dir_all(work_path);
+    let work_dir = args.work_dir.clone();
+    let work_path = Path::new(work_dir.as_str());
+    let _ = std::fs::create_dir_all(work_path);
 
-        let mut target_type: EVMTargetType = match args.target_type.clone() {
-            Some(v) => EVMTargetType::from_str(v.as_str()),
-            None => {
-                // infer target type from args
-                if args.target.starts_with("0x") {
-                    EVMTargetType::Address
-                } else {
-                    EVMTargetType::Glob
-                }
+    let mut target_type: EVMTargetType = match args.target_type.clone() {
+        Some(v) => EVMTargetType::from_str(v.as_str()),
+        None => {
+            // infer target type from args
+            if args.target.starts_with("0x") {
+                EVMTargetType::Address
+            } else {
+                EVMTargetType::Glob
             }
-        };
-
-        let is_onchain = args.chain_type.is_some() || args.onchain_url.is_some();
-
-        let mut onchain = if is_onchain {
-            match args.chain_type.clone() {
-                Some(chain_str) => {
-                    let chain = Chain::from_str(&chain_str).expect("Invalid chain type");
-                    let block_number = args.onchain_block_number.unwrap_or(0);
-                    Some(OnChainConfig::new(chain, block_number))
-                }
-                None => Some(OnChainConfig::new_raw(
-                    args.onchain_url.clone()
-                        .expect("You need to either specify chain type or chain rpc"),
-                    args.onchain_chain_id
-                        .expect("You need to either specify chain type or chain id"),
-                    args.onchain_block_number.unwrap_or(0),
-                    args.onchain_explorer_url.clone()
-                        .expect("You need to either specify chain type or block explorer url"),
-                    args.onchain_chain_name.clone()
-                        .expect("You need to either specify chain type or chain name"),
-                )),
-            }
-        } else {
-            None
-        };
-
-        solution::init_cli_args(target, work_dir, &onchain);
-        let _onchain_clone = onchain.clone();
-
-        let etherscan_api_key = match args.onchain_etherscan_api_key.clone() {
-            Some(v) => v,
-            None => std::env::var("ETHERSCAN_API_KEY").unwrap_or_default(),
-        };
-
-        if onchain.is_some() && !etherscan_api_key.is_empty() {
-            onchain.as_mut().unwrap().etherscan_api_key = etherscan_api_key.split(',').map(|s| s.to_string()).collect();
         }
-        let erc20_producer = Rc::new(RefCell::new(ERC20Producer::new()));
+    };
 
-        let flashloan_oracle = Rc::new(RefCell::new(IERC20OracleFlashloan::new(erc20_producer.clone())));
+    let is_onchain = args.chain_type.is_some() || args.onchain_url.is_some();
 
-        // let harness_code = "oracle_harness()";
-        // let mut harness_hash: [u8; 4] = [0; 4];
-        // set_hash(harness_code, &mut harness_hash);
-        // let mut function_oracle =
-        //     FunctionHarnessOracle::new_no_condition(EVMAddress::zero(),
-        // Vec::from(harness_hash));
+    let mut onchain = if is_onchain {
+        match args.chain_type.clone() {
+            Some(chain_str) => {
+                let chain = Chain::from_str(&chain_str).expect("Invalid chain type");
+                let block_number = args.onchain_block_number.unwrap_or(0);
+                Some(OnChainConfig::new(chain, block_number))
+            }
+            None => Some(OnChainConfig::new_raw(
+                args.onchain_url.clone()
+                    .expect("You need to either specify chain type or chain rpc"),
+                args.onchain_chain_id
+                    .expect("You need to either specify chain type or chain id"),
+                args.onchain_block_number.unwrap_or(0),
+                args.onchain_explorer_url.clone()
+                    .expect("You need to either specify chain type or block explorer url"),
+                args.onchain_chain_name.clone()
+                    .expect("You need to either specify chain type or chain name"),
+            )),
+        }
+    } else {
+        None
+    };
 
-        let mut oracles: Vec<
-            Rc<
-                RefCell<
-                    dyn Oracle<
+    solution::init_cli_args(target, work_dir, &onchain);
+    let _onchain_clone = onchain.clone();
+
+    let etherscan_api_key = match args.onchain_etherscan_api_key.clone() {
+        Some(v) => v,
+        None => std::env::var("ETHERSCAN_API_KEY").unwrap_or_default(),
+    };
+
+    if onchain.is_some() && !etherscan_api_key.is_empty() {
+        onchain.as_mut().unwrap().etherscan_api_key = etherscan_api_key.split(',').map(|s| s.to_string()).collect();
+    }
+    let erc20_producer = Rc::new(RefCell::new(ERC20Producer::new()));
+
+    let flashloan_oracle = Rc::new(RefCell::new(IERC20OracleFlashloan::new(erc20_producer.clone())));
+
+    // let harness_code = "oracle_harness()";
+    // let mut harness_hash: [u8; 4] = [0; 4];
+    // set_hash(harness_code, &mut harness_hash);
+    // let mut function_oracle =
+    //     FunctionHarnessOracle::new_no_condition(EVMAddress::zero(),
+    // Vec::from(harness_hash));
+
+    let mut oracles: Vec<
+        Rc<
+            RefCell<
+                dyn Oracle<
+                    EVMState,
+                    revm_primitives::B160,
+                    revm_primitives::Bytecode,
+                    bytes::Bytes,
+                    revm_primitives::B160,
+                    revm_primitives::ruint::Uint<256, 4>,
+                    Vec<u8>,
+                    EVMInput,
+                    FuzzState<
+                        EVMInput,
                         EVMState,
                         revm_primitives::B160,
-                        revm_primitives::Bytecode,
-                        bytes::Bytes,
                         revm_primitives::B160,
-                        revm_primitives::ruint::Uint<256, 4>,
                         Vec<u8>,
-                        EVMInput,
-                        FuzzState<
-                            EVMInput,
-                            EVMState,
-                            revm_primitives::B160,
-                            revm_primitives::B160,
-                            Vec<u8>,
-                            ConciseEVMInput,
-                        >,
                         ConciseEVMInput,
-                        EVMQueueExecutor,
                     >,
+                    ConciseEVMInput,
+                    EVMQueueExecutor,
                 >,
             >,
-        > = vec![];
+        >,
+    > = vec![];
 
-        let mut producers: Vec<
-            Rc<
-                RefCell<
-                    dyn Producer<
-                        EVMState,
-                        EVMAddress,
-                        _,
-                        _,
-                        EVMAddress,
-                        EVMU256,
-                        Vec<u8>,
-                        EVMInput,
-                        EVMFuzzState,
-                        ConciseEVMInput,
-                        EVMQueueExecutor,
-                    >,
+    let mut producers: Vec<
+        Rc<
+            RefCell<
+                dyn Producer<
+                    EVMState,
+                    EVMAddress,
+                    _,
+                    _,
+                    EVMAddress,
+                    EVMU256,
+                    Vec<u8>,
+                    EVMInput,
+                    EVMFuzzState,
+                    ConciseEVMInput,
+                    EVMQueueExecutor,
                 >,
             >,
-        > = vec![];
+        >,
+    > = vec![];
 
-        let oracle_types = OracleType::from_strs(args.detectors.as_str());
+    let oracle_types = OracleType::from_strs(args.detectors.as_str());
 
-        if oracle_types.contains(&OracleType::Pair) {
-            oracles.push(Rc::new(RefCell::new(PairBalanceOracle::new())));
-        }
+    if oracle_types.contains(&OracleType::Pair) {
+        oracles.push(Rc::new(RefCell::new(PairBalanceOracle::new())));
+    }
 
-        if oracle_types.contains(&OracleType::ERC20) {
-            oracles.push(flashloan_oracle.clone());
-            producers.push(erc20_producer);
-        }
+    if oracle_types.contains(&OracleType::ERC20) {
+        oracles.push(flashloan_oracle.clone());
+        producers.push(erc20_producer);
+    }
 
-        let is_onchain = onchain.is_some();
-        let mut state: EVMFuzzState = FuzzState::new(args.seed);
+    let is_onchain = onchain.is_some();
+    let mut state: EVMFuzzState = FuzzState::new(args.seed);
 
-        let mut proxy_deploy_codes: Vec<String> = vec![];
+    let mut proxy_deploy_codes: Vec<String> = vec![];
 
-        if args.fetch_tx_data {
-            let response = reqwest::blocking::get(args.proxy_address.clone()).unwrap().text().unwrap();
-            let data: Vec<Data> = serde_json::from_str(&response).unwrap();
+    if args.fetch_tx_data {
+        let response = reqwest::blocking::get(args.proxy_address.clone()).unwrap().text().unwrap();
+        let data: Vec<Data> = serde_json::from_str(&response).unwrap();
 
-            for d in data {
-                if d.body.method != "eth_sendRawTransaction" {
-                    continue;
-                }
-
-                let tx = d.body.params.unwrap();
-
-                let params: Vec<String> = serde_json::from_value(tx).unwrap();
-
-                let data = params[0].clone();
-
-                let data = if let Some(stripped) = data.strip_prefix("0x") {
-                    stripped
-                } else {
-                    &data
-                };
-
-                let bytes_data = hex::decode(data).unwrap();
-
-                let transaction: Transaction = rlp::decode(&bytes_data).unwrap();
-
-                let code = hex::encode(transaction.input);
-
-                proxy_deploy_codes.push(code);
+        for d in data {
+            if d.body.method != "eth_sendRawTransaction" {
+                continue;
             }
-        }
 
-        let constructor_args_map = parse_constructor_args_string(args.constructor_args.clone());
+            let tx = d.body.params.unwrap();
 
-        let onchain_replacements = if !args.onchain_replacements_file.is_empty() {
-            BuildJobResult::from_multi_file(args.onchain_replacements_file.clone())
-        } else {
-            HashMap::new()
-        };
+            let params: Vec<String> = serde_json::from_value(tx).unwrap();
 
-        let builder = if args.onchain_builder.len() > 1 {
-            Some(BuildJob::new(
-                args.onchain_builder.clone(),
-                onchain_replacements,
-                args.work_dir.clone(),
-            ))
-        } else {
-            None
-        };
+            let data = params[0].clone();
 
-        if !args.builder_artifacts_url.is_empty() || !args.builder_artifacts_file.is_empty() || args.build_command.len() > 0
-        {
-            if onchain.is_some() {
-                target_type = EVMTargetType::AnvilFork;
-            } else if !args.setup_file.is_empty() {
-                target_type = EVMTargetType::Setup;
-            } else if !args.offchain_config_url.is_empty() || !args.offchain_config_file.is_empty() {
-                target_type = EVMTargetType::Config;
+            let data = if let Some(stripped) = data.strip_prefix("0x") {
+                stripped
             } else {
-                panic!("Please specify --deployment-script (The contract that deploys the project) or --offchain-config-file (JSON for deploying the project)");
-            }
+                &data
+            };
+
+            let bytes_data = hex::decode(data).unwrap();
+
+            let transaction: Transaction = rlp::decode(&bytes_data).unwrap();
+
+            let code = hex::encode(transaction.input);
+
+            proxy_deploy_codes.push(code);
         }
+    }
 
-        let offchain_artifacts = if !args.builder_artifacts_url.is_empty() {
-            Some(OffChainArtifact::from_json_url(args.builder_artifacts_url.clone()).expect("failed to parse builder artifacts"))
-        } else if !args.builder_artifacts_file.is_empty() {
-            Some(OffChainArtifact::from_file(args.builder_artifacts_file.clone()).expect("failed to parse builder artifacts"))
-        } else if args.build_command.len() > 0 {
-            let command = args.build_command.join(" ");
-            Some(OffChainArtifact::from_command(command).expect("Failed to build the project"))
+    let constructor_args_map = parse_constructor_args_string(args.constructor_args.clone());
+
+    let onchain_replacements = if !args.onchain_replacements_file.is_empty() {
+        BuildJobResult::from_multi_file(args.onchain_replacements_file.clone())
+    } else {
+        HashMap::new()
+    };
+
+    let builder = if args.onchain_builder.len() > 1 {
+        Some(BuildJob::new(
+            args.onchain_builder.clone(),
+            onchain_replacements,
+            args.work_dir.clone(),
+        ))
+    } else {
+        None
+    };
+
+    if !args.builder_artifacts_url.is_empty() || !args.builder_artifacts_file.is_empty() || args.build_command.len() > 0
+    {
+        if onchain.is_some() {
+            target_type = EVMTargetType::AnvilFork;
+        } else if !args.setup_file.is_empty() {
+            target_type = EVMTargetType::Setup;
+        } else if !args.offchain_config_url.is_empty() || !args.offchain_config_file.is_empty() {
+            target_type = EVMTargetType::Config;
         } else {
-            None
-        };
+            panic!("Please specify --deployment-script (The contract that deploys the project) or --offchain-config-file (JSON for deploying the project)");
+        }
+    }
 
-        let offchain_config = if !args.offchain_config_url.is_empty() {
-            Some(OffchainConfig::from_json_url(args.offchain_config_url.clone()).expect("failed to parse offchain config"))
-        } else if !args.offchain_config_file.is_empty() {
-            Some(OffchainConfig::from_file(args.offchain_config_file.clone()).expect("failed to parse offchain config"))
-        } else {
-            None
-        };
+    let offchain_artifacts = if !args.builder_artifacts_url.is_empty() {
+        Some(OffChainArtifact::from_json_url(args.builder_artifacts_url.clone()).expect("failed to parse builder artifacts"))
+    } else if !args.builder_artifacts_file.is_empty() {
+        Some(OffChainArtifact::from_file(args.builder_artifacts_file.clone()).expect("failed to parse builder artifacts"))
+    } else if args.build_command.len() > 0 {
+        let command = args.build_command.join(" ");
+        Some(OffChainArtifact::from_command(command).expect("Failed to build the project"))
+    } else {
+        None
+    };
 
-        let force_abis = args
-            .force_abi
-            .split(',')
-            .filter(|s| !s.is_empty())
-            .map(|x| {
-                let runes = x.split(':').collect_vec();
-                assert_eq!(runes.len(), 2, "Invalid force abi format");
-                let abi = std::fs::read_to_string(runes[1]).expect("Failed to read abi file");
-                (runes[0].to_string(), abi)
-            })
-            .collect::<HashMap<_, _>>();
+    let offchain_config = if !args.offchain_config_url.is_empty() {
+        Some(OffchainConfig::from_json_url(args.offchain_config_url.clone()).expect("failed to parse offchain config"))
+    } else if !args.offchain_config_file.is_empty() {
+        Some(OffchainConfig::from_file(args.offchain_config_file.clone()).expect("failed to parse offchain config"))
+    } else {
+        None
+    };
 
-        let mut contract_loader = match target_type {
-            EVMTargetType::Glob => ContractLoader::from_glob(
-                args.target.as_str(),
-                &mut state,
-                &proxy_deploy_codes,
-                &constructor_args_map,
-                args.target.clone(),
-                Some(args.base_path.clone()),
-            ),
-            EVMTargetType::Config => ContractLoader::from_config(
+    let force_abis = args
+        .force_abi
+        .split(',')
+        .filter(|s| !s.is_empty())
+        .map(|x| {
+            let runes = x.split(':').collect_vec();
+            assert_eq!(runes.len(), 2, "Invalid force abi format");
+            let abi = std::fs::read_to_string(runes[1]).expect("Failed to read abi file");
+            (runes[0].to_string(), abi)
+        })
+        .collect::<HashMap<_, _>>();
+
+    let mut contract_loader = match target_type {
+        EVMTargetType::Glob => ContractLoader::from_glob(
+            args.target.as_str(),
+            &mut state,
+            &proxy_deploy_codes,
+            &constructor_args_map,
+            args.target.clone(),
+            Some(args.base_path.clone()),
+        ),
+        EVMTargetType::Config => ContractLoader::from_config(
+            &offchain_artifacts.expect("offchain artifacts is required for config target type"),
+            &offchain_config.expect("offchain config is required for config target type"),
+        ),
+        EVMTargetType::AnvilFork => {
+            let addresses: Vec<EVMAddress> = args
+                .target
+                .split(',')
+                .map(|s| EVMAddress::from_str(s).unwrap())
+                .collect();
+            ContractLoader::from_fork(
                 &offchain_artifacts.expect("offchain artifacts is required for config target type"),
-                &offchain_config.expect("offchain config is required for config target type"),
-            ),
-            EVMTargetType::AnvilFork => {
-                let addresses: Vec<EVMAddress> = args
-                    .target
-                    .split(',')
-                    .map(|s| EVMAddress::from_str(s).unwrap())
-                    .collect();
-                ContractLoader::from_fork(
-                    &offchain_artifacts.expect("offchain artifacts is required for config target type"),
-                    onchain.as_mut().expect("onchain is required to fork anvil"),
-                    HashSet::from_iter(addresses),
-                )
+                onchain.as_mut().expect("onchain is required to fork anvil"),
+                HashSet::from_iter(addresses),
+            )
+        }
+        EVMTargetType::Setup => ContractLoader::from_setup(
+            &offchain_artifacts.expect("offchain artifacts is required for config target type"),
+            args.setup_file,
+            args.work_dir.clone(),
+            &etherscan_api_key,
+        ),
+        EVMTargetType::Address => {
+            if onchain.is_none() {
+                panic!("Onchain is required for address target type");
             }
-            EVMTargetType::Setup => ContractLoader::from_setup(
-                &offchain_artifacts.expect("offchain artifacts is required for config target type"),
-                args.setup_file,
-                args.work_dir.clone(),
-                &etherscan_api_key,
-            ),
-            EVMTargetType::Address => {
-                if onchain.is_none() {
-                    panic!("Onchain is required for address target type");
-                }
-                let mut args_target = args.target.clone();
+            let mut args_target = args.target.clone();
 
-                let addresses: Vec<EVMAddress> = args_target
-                    .split(',')
-                    .map(|s| EVMAddress::from_str(s).unwrap())
-                    .collect();
-                ContractLoader::from_address(
-                    onchain.as_mut().unwrap(),
-                    HashSet::from_iter(addresses),
-                    builder.clone(),
-                )
+            let addresses: Vec<EVMAddress> = args_target
+                .split(',')
+                .map(|s| EVMAddress::from_str(s).unwrap())
+                .collect();
+            ContractLoader::from_address(
+                onchain.as_mut().unwrap(),
+                HashSet::from_iter(addresses),
+                builder.clone(),
+            )
+        }
+    };
+
+    contract_loader.force_abi(force_abis);
+
+    let config = Config {
+        contract_loader,
+        only_fuzz: if !args.only_fuzz.is_empty() {
+            args.only_fuzz
+                .split(',')
+                .map(|s| EVMAddress::from_str(s).expect("failed to parse only fuzz"))
+                .collect()
+        } else {
+            HashSet::new()
+        },
+        onchain,
+        concolic: args.concolic,
+        concolic_caller: args.concolic_caller,
+        concolic_timeout: args.concolic_timeout,
+        concolic_num_threads: {
+            if args.concolic_num_threads == 0 {
+                num_cpus::get()
+            } else {
+                args.concolic_num_threads
             }
-        };
+        },
+        oracle: oracles,
+        producers,
+        flashloan: args.flashloan,
+        onchain_storage_fetching: if is_onchain {
+            Some(
+                StorageFetchingMode::from_str(args.onchain_storage_fetching.as_str())
+                    .expect("unknown storage fetching mode"),
+            )
+        } else {
+            None
+        },
+        replay_file: args.replay_file.clone(),
+        flashloan_oracle,
+        selfdestruct_oracle: oracle_types.contains(&OracleType::SelfDestruct),
+        reentrancy_oracle: oracle_types.contains(&OracleType::Reentrancy),
+        work_dir: args.work_dir.clone(),
+        write_relationship: args.write_relationship,
+        run_forever: args.run_forever,
+        sha3_bypass: args.sha3_bypass,
+        base_path: args.base_path.clone(),
+        echidna_oracle: oracle_types.contains(&OracleType::Echidna),
+        invariant_oracle: oracle_types.contains(&OracleType::Invariant),
+        panic_on_bug: args.panic_on_bug,
+        spec_id: args.spec_id.clone(),
+        typed_bug: oracle_types.contains(&OracleType::TypedBug),
+        arbitrary_external_call: oracle_types.contains(&OracleType::ArbitraryCall),
+        math_calculate_oracle: oracle_types.contains(&OracleType::MathCalculate),
+        builder,
+        local_files_basedir_pattern: match target_type {
+            EVMTargetType::Glob => Some(args.target.clone()),
+            _ => None,
+        },
+        #[cfg(feature = "use_presets")]
+        preset_file_path: args.preset_file_path.clone(),
+        load_corpus: args.load_corpus.clone(),
+        etherscan_api_key,
+    };
 
-        contract_loader.force_abi(force_abis);
+    let mut abis_map: HashMap<String, Vec<Vec<serde_json::Value>>> = HashMap::new();
 
-        let config = Config {
-            contract_loader,
-            only_fuzz: if !args.only_fuzz.is_empty() {
-                args.only_fuzz
-                    .split(',')
-                    .map(|s| EVMAddress::from_str(s).expect("failed to parse only fuzz"))
-                    .collect()
-            } else {
-                HashSet::new()
-            },
-            onchain,
-            concolic: args.concolic,
-            concolic_caller: args.concolic_caller,
-            concolic_timeout: args.concolic_timeout,
-            concolic_num_threads: {
-                if args.concolic_num_threads == 0 {
-                    num_cpus::get()
-                } else {
-                    args.concolic_num_threads
-                }
-            },
-            oracle: oracles,
-            producers,
-            flashloan: args.flashloan,
-            onchain_storage_fetching: if is_onchain {
-                Some(
-                    StorageFetchingMode::from_str(args.onchain_storage_fetching.as_str())
-                        .expect("unknown storage fetching mode"),
-                )
-            } else {
-                None
-            },
-            replay_file: args.replay_file.clone(),
-            flashloan_oracle,
-            selfdestruct_oracle: oracle_types.contains(&OracleType::SelfDestruct),
-            reentrancy_oracle: oracle_types.contains(&OracleType::Reentrancy),
-            work_dir: args.work_dir.clone(),
-            write_relationship: args.write_relationship,
-            run_forever: args.run_forever,
-            sha3_bypass: args.sha3_bypass,
-            base_path: args.base_path.clone(),
-            echidna_oracle: oracle_types.contains(&OracleType::Echidna),
-            invariant_oracle: oracle_types.contains(&OracleType::Invariant),
-            panic_on_bug: args.panic_on_bug,
-            spec_id: args.spec_id.clone(),
-            typed_bug: oracle_types.contains(&OracleType::TypedBug),
-            arbitrary_external_call: oracle_types.contains(&OracleType::ArbitraryCall),
-            math_calculate_oracle: oracle_types.contains(&OracleType::MathCalculate),
-            builder,
-            local_files_basedir_pattern: match target_type {
-                EVMTargetType::Glob => Some(args.target.clone()),
-                _ => None,
-            },
-            #[cfg(feature = "use_presets")]
-            preset_file_path: args.preset_file_path.clone(),
-            load_corpus: args.load_corpus.clone(),
-            etherscan_api_key,
-        };
-
-        let mut abis_map: HashMap<String, Vec<Vec<serde_json::Value>>> = HashMap::new();
-
-        for contract_info in config.contract_loader.contracts.clone() {
-            let abis: Vec<serde_json::Value> = contract_info
-                .abi
-                .iter()
-                .map(|config| {
-                    json!({
+    for contract_info in config.contract_loader.contracts.clone() {
+        let abis: Vec<serde_json::Value> = contract_info
+            .abi
+            .iter()
+            .map(|config| {
+                json!({
                         hex::encode(config.function): format!("{}{}", &config.function_name, &config.abi)
                     })
-                })
-                .collect();
-            abis_map
-                .entry(hex::encode(contract_info.deployed_address))
-                .or_default()
-                .push(abis);
-        }
+            })
+            .collect();
+        abis_map
+            .entry(hex::encode(contract_info.deployed_address))
+            .or_default()
+            .push(abis);
+    }
 
-        let json_str = serde_json::to_string(&abis_map).expect("Failed to serialize ABI map to JSON");
+    let json_str = serde_json::to_string(&abis_map).expect("Failed to serialize ABI map to JSON");
 
-        let abis_json = format!("{}/abis.json", args.work_dir.clone().as_str());
+    let abis_json = format!("{}/abis.json", args.work_dir.clone().as_str());
 
-        utils::try_write_file(&abis_json, &json_str, true).unwrap();
-        evm_fuzzer(config, &mut state);
+    utils::try_write_file(&abis_json, &json_str, true).unwrap();
+    evm_fuzzer(config, &mut state);
 
-        // fuzz轮数++
-        FUZZ_COUNT.fetch_add(1, Ordering::SeqCst);
-        println!("👉👉👉👉👉👉👉👉👉又执行了一次......");
-        plot_mutate_counts_vec().expect("plot error");
+    // fuzz轮数++
+    FUZZ_COUNT.fetch_add(1, Ordering::SeqCst);
+    println!("👉👉👉👉👉👉👉👉👉又执行了一次......");
+    plot_mutate_counts_vec().expect("plot error");
     // }
 
 

@@ -2,25 +2,22 @@
 //! stage.
 
 use core::{fmt::Debug, marker::PhantomData};
-use std::collections::HashMap;
 use std::sync::atomic::Ordering;
 use std::sync::Mutex;
-use crate::evm::MUTATE_COUNT;
+use std::time::{SystemTime, UNIX_EPOCH};
+
 use lazy_static::lazy_static;
-use libafl::{corpus::{Corpus, CorpusId}, Error, ExecuteInputResult, executors::{Executor, HasObservers}, fuzzer::Evaluator, mark_feature_time, mutators::Mutator, prelude::Testcase, stages::{mutational::MutatedTransform, MutationalStage, Stage}, start_timer, state::{ HasCorpus, HasMetadata, HasRand, UsesState}};
+use libafl::{corpus::{Corpus, CorpusId}, Error, ExecuteInputResult, executors::{Executor, HasObservers}, fuzzer::Evaluator, mark_feature_time, mutators::Mutator, prelude::Testcase, stages::{mutational::MutatedTransform, MutationalStage, Stage}, start_timer, state::{HasCorpus, HasMetadata, HasRand, UsesState}};
 use libafl::mutators::MutationResult;
 use libafl::prelude::mutational::MutatedTransformPost;
-use libafl_bolts::ErrorBacktrace;
 use plotters::prelude::*;
-use std::time::{SystemTime, UNIX_EPOCH};
-use crate::evm::{ACTION_COUNTS, EPSILON, LOSS_VALUES, REWARD_VALUES, SOLUTION_FLAG};
-// use crate::evm::{AGENT, ENV, EPISODES, BATCH_SIZE};
-use crate::global_info::{calculate_value};
 
+use crate::evm::{REWARD_VALUES, SOLUTION_FLAG};
+use crate::evm::MUTATE_COUNT;
 
 pub trait TestcaseScoreWithId<S>
-where
-    S: HasMetadata + HasCorpus,
+    where
+        S: HasMetadata + HasCorpus,
 {
     /// Computes the favor factor of a [`Testcase`]. Lower is better.
     fn compute(state: &S, entry: &mut Testcase<S::Input>, id: CorpusId) -> Result<f64, Error>;
@@ -35,21 +32,21 @@ pub struct PowerMutationalStageWithId<E, F, EM, I, M, Z> {
 }
 
 impl<E, F, EM, I, M, Z> UsesState for PowerMutationalStageWithId<E, F, EM, I, M, Z>
-where
-    E: UsesState,
+    where
+        E: UsesState,
 {
     type State = E::State;
 }
 
 impl<E, F, EM, I, M, Z> MutationalStage<E, EM, I, M, Z> for PowerMutationalStageWithId<E, F, EM, I, M, Z>
-where
-    E: Executor<EM, Z> + HasObservers,
-    EM: UsesState<State = E::State>,
-    F: TestcaseScoreWithId<E::State>,
-    M: Mutator<I, E::State>,
-    E::State: HasCorpus + HasMetadata + HasRand,
-    Z: Evaluator<E, EM, State = E::State>,
-    I: MutatedTransform<E::Input, E::State> + Clone,
+    where
+        E: Executor<EM, Z> + HasObservers,
+        EM: UsesState<State=E::State>,
+        F: TestcaseScoreWithId<E::State>,
+        M: Mutator<I, E::State>,
+        E::State: HasCorpus + HasMetadata + HasRand,
+        Z: Evaluator<E, EM, State=E::State>,
+        I: MutatedTransform<E::Input, E::State> + Clone,
 {
     /// The mutator, added to this stage
     #[inline]
@@ -130,14 +127,14 @@ lazy_static! {
 
 
 impl<E, F, EM, I, M, Z> Stage<E, EM, Z> for PowerMutationalStageWithId<E, F, EM, I, M, Z>
-where
-    E: Executor<EM, Z> + HasObservers,
-    EM: UsesState<State = E::State>,
-    F: TestcaseScoreWithId<E::State>,
-    M: Mutator<I, E::State>,
-    E::State: HasCorpus + HasMetadata + HasRand,
-    Z: Evaluator<E, EM, State = E::State>,
-    I: MutatedTransform<E::Input, E::State> + Clone,
+    where
+        E: Executor<EM, Z> + HasObservers,
+        EM: UsesState<State=E::State>,
+        F: TestcaseScoreWithId<E::State>,
+        M: Mutator<I, E::State>,
+        E::State: HasCorpus + HasMetadata + HasRand,
+        Z: Evaluator<E, EM, State=E::State>,
+        I: MutatedTransform<E::Input, E::State> + Clone,
 {
     #[inline]
     #[allow(clippy::let_and_return)]
@@ -152,32 +149,26 @@ where
         MUTATE_COUNT.fetch_add(1, Ordering::SeqCst);
         println!(">>>>>>执行mutate stage perform");
 
-        //dqn_1
+        //dqn初始化
         let mut env = crate::evm::ENV.lock().unwrap();
-        // let episodes = *crate::evm::EPISODES.lock().unwrap();
-        let batch_size = *crate::evm::BATCH_SIZE.lock().unwrap();
         let mut agent = crate::evm::AGENT.lock().unwrap();
+        // let episodes = *crate::evm::EPISODES.lock().unwrap();
         // let mut var_store = VAR_STORE.lock().unwrap();
         // var_store.load("./test_model").unwrap();
         // let mut agent = DQNAgent::new_from_model(&mut var_store, "./test_model", *crate::evm::STATE_DIM.lock().unwrap() as i64, *crate::evm::ACTION_DIM.lock().unwrap() as i64, *crate::evm::REPLAY_BUFFER_CAPACITY.lock().unwrap() as usize).unwrap();
 
-        let mut state_tensor = env.reset();
-        let mut epsilon = EPSILON.lock().unwrap();//贪心程度，平衡利用和搜索
-        let (action,action_index) = agent.get_action(&state_tensor, *epsilon);
+        //迭代训练
+        let state_tensor = crate::evm::STATE.lock().unwrap().clone(&Default::default());
+        let (action, action_index) = agent.get_action(&state_tensor);
         env.step_1(action);
-
-        //执行变异
         let ret = self.perform_mutational(fuzzer, executor, state, manager, corpus_idx);
-
-        //dqn_评估
         let (next_state, reward) = env.step_2();
-        agent.replay_buffer.push(state_tensor, action_index, reward, next_state.clone(&next_state));
-        state_tensor=next_state;
-        agent.update_model(batch_size as usize);
+        agent.update_model(state_tensor, action_index, reward, next_state.clone(&next_state)).expect("update panic");
+        *crate::evm::STATE.lock().unwrap() = next_state;
 
-        // *epsilon = (*epsilon * *EPSILON_DECAY.lock().unwrap()).max(*FINAL_EPSILON.lock().unwrap());
         println!(">>update model");
-        // if MUTATE_COUNT.load(std::sync::atomic::Ordering::SeqCst) % 5000 == 0 {
+
+        // if MUTATE_COUNT.load(std::sync::atomic::Ordering::SeqCst) % 500 == 0 {
         //     agent.model.save("./dqn_net.ot").unwrap();
         //
         //     // let loss_values = LOSS_VALUES.lock().unwrap();
@@ -232,6 +223,7 @@ pub fn plot_reward_values() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
+
 // fn plot_action_counts(action_counts: &Mutex<HashMap<i32, i64>>, filename: &str) -> Result<(), Box<dyn std::error::Error>> {
 //     let action_counts = action_counts.lock().unwrap();
 //
@@ -281,13 +273,13 @@ pub fn plot_loss_values(loss_values: &[f32]) -> Result<(), Box<dyn std::error::E
 }
 
 impl<E, F, EM, M, Z> PowerMutationalStageWithId<E, F, EM, E::Input, M, Z>
-where
-    E: Executor<EM, Z> + HasObservers,
-    EM: UsesState<State = E::State>,
-    F: TestcaseScoreWithId<E::State>,
-    M: Mutator<E::Input, E::State>,
-    E::State: HasCorpus + HasMetadata + HasRand,
-    Z: Evaluator<E, EM, State = E::State>,
+    where
+        E: Executor<EM, Z> + HasObservers,
+        EM: UsesState<State=E::State>,
+        F: TestcaseScoreWithId<E::State>,
+        M: Mutator<E::Input, E::State>,
+        E::State: HasCorpus + HasMetadata + HasRand,
+        Z: Evaluator<E, EM, State=E::State>,
 {
     /// Creates a new [`PowerMutationalStageWithId`]
     pub fn new(mutator: M) -> Self {
@@ -296,13 +288,13 @@ where
 }
 
 impl<E, F, EM, I, M, Z> PowerMutationalStageWithId<E, F, EM, I, M, Z>
-where
-    E: Executor<EM, Z> + HasObservers,
-    EM: UsesState<State = E::State>,
-    F: TestcaseScoreWithId<E::State>,
-    M: Mutator<I, E::State>,
-    E::State: HasCorpus + HasMetadata + HasRand,
-    Z: Evaluator<E, EM, State = E::State>,
+    where
+        E: Executor<EM, Z> + HasObservers,
+        EM: UsesState<State=E::State>,
+        F: TestcaseScoreWithId<E::State>,
+        M: Mutator<I, E::State>,
+        E::State: HasCorpus + HasMetadata + HasRand,
+        Z: Evaluator<E, EM, State=E::State>,
 {
     /// Creates a new transforming [`PowerMutationalStageWithId`]
     pub fn transforming(mutator: M) -> Self {
