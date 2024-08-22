@@ -367,100 +367,101 @@ impl FuzzEnv {
     }
 }
 //ReplayBuffer存储经验元组（state, action, reward, next_state）========================================================
-pub struct ReplayBuffer {
-    buffer: VecDeque<(Tensor, i64, i64, Tensor)>,
-    capacity: usize,
-}
-
-impl ReplayBuffer {
-    pub fn new(capacity: usize) -> ReplayBuffer {
-        ReplayBuffer {
-            buffer: VecDeque::with_capacity(capacity),
-            capacity,
-        }
-    }
-
-    pub fn push(&mut self, state: Tensor, action: i64, reward: i64, next_state: Tensor) {
-        if self.buffer.len() == self.capacity {
-            self.buffer.pop_front();
-        }
-        self.buffer.push_back((state, action, reward, next_state));
-    }
-
-    pub fn sample(&self, batch_size: usize) -> Option<Vec<(Tensor, i64, i64, Tensor)>> {
-        if self.buffer.len() < batch_size {
-            None
-        } else {
-            Some(self.buffer.iter().map(|(s, a, r, ns)| (s.copy(), *a, *r, ns.copy())).take(batch_size).collect())
-        }
-    }
-
-    pub fn len(&self) -> usize {
-        self.buffer.len()
-    }
-}
-
 // pub struct ReplayBuffer {
 //     buffer: VecDeque<(Tensor, i64, i64, Tensor)>,
-//     priorities: VecDeque<f64>,
 //     capacity: usize,
-//     alpha: f64,//priorities计算为误差的 alpha 次幂。
 // }
 //
 // impl ReplayBuffer {
-//     pub fn new(capacity: usize, alpha: f64) -> ReplayBuffer {
+//     pub fn new(capacity: usize) -> ReplayBuffer {
 //         ReplayBuffer {
 //             buffer: VecDeque::with_capacity(capacity),
-//             priorities: VecDeque::with_capacity(capacity),
 //             capacity,
-//             alpha,
 //         }
 //     }
 //
-//     pub fn push(&mut self, state: Tensor, action: i64, reward: i64, next_state: Tensor, td_error: f64) {
+//     pub fn push(&mut self, state: Tensor, action: i64, reward: i64, next_state: Tensor) {
 //         if self.buffer.len() == self.capacity {
 //             self.buffer.pop_front();
-//             self.priorities.pop_front();
 //         }
 //         self.buffer.push_back((state, action, reward, next_state));
-//         self.priorities.push_back(td_error.abs().powf(self.alpha));
 //     }
 //
 //     pub fn sample(&self, batch_size: usize) -> Option<Vec<(Tensor, i64, i64, Tensor)>> {
 //         if self.buffer.len() < batch_size {
 //             None
 //         } else {
-//             let mut rng = rand::thread_rng();
-//             let total_priority: f64 = self.priorities.iter().sum();
-//             let mut sampled_indices = Vec::with_capacity(batch_size);
-//
-//             for _ in 0..batch_size {
-//                 let mut rand_val: f64 = rng.gen::<f64>() * total_priority;
-//                 for (i, &priority) in self.priorities.iter().enumerate() {
-//                     rand_val -= priority;
-//                     if rand_val <= 0.0 {
-//                         sampled_indices.push(i);
-//                         break;
-//                     }
-//                 }
-//             }
-//
-//             Some(sampled_indices.iter().map(|&i| {
-//                 let (ref s, a, r, ref ns) = self.buffer[i];
-//                 (s.copy(), a, r, ns.copy())
-//             }).collect())
+//             Some(self.buffer.iter().map(|(s, a, r, ns)| (s.copy(), *a, *r, ns.copy())).take(batch_size).collect())
 //         }
 //     }
 //
-//     pub fn update_priorities(&mut self, indices: &[usize], td_errors: &[f64]) {
-//         for (&index, &td_error) in indices.iter().zip(td_errors.iter()) {
-//             self.priorities[index] = td_error.abs().powf(self.alpha);
-//         }
-//     }
 //     pub fn len(&self) -> usize {
 //         self.buffer.len()
 //     }
 // }
+
+pub struct ReplayBuffer {
+    buffer: VecDeque<(Tensor, i64, i64, Tensor)>,
+    priorities: VecDeque<f64>,
+    capacity: usize,
+    alpha: f64,//priorities=误差的 alpha 次幂,控制优先级的程度
+    // max_priority: f64,//是否需要
+}
+
+impl ReplayBuffer {
+    pub fn new(capacity: usize, alpha: f64) -> ReplayBuffer {
+        ReplayBuffer {
+            buffer: VecDeque::with_capacity(capacity),
+            priorities: VecDeque::with_capacity(capacity),
+            capacity,
+            alpha,
+        }
+    }
+
+    pub fn push(&mut self, state: Tensor, action: i64, reward: i64, next_state: Tensor) {
+        if self.buffer.len() == self.capacity {
+            self.buffer.pop_front();
+            self.priorities.pop_front();
+        }
+        self.buffer.push_back((state, action, reward, next_state));
+        self.priorities.push_back(1 as f64);
+    }
+
+    pub fn sample(&self, batch_size: usize) -> Option<Vec<(Tensor, i64, i64, Tensor)>> {
+        if self.buffer.len() < batch_size {
+            None
+        } else {
+            let mut rng = rand::thread_rng();
+            let total_priority: f64 = self.priorities.iter().sum();
+            let mut sampled_indices = Vec::with_capacity(batch_size);
+
+            for _ in 0..batch_size {
+                let mut rand_val: f64 = rng.gen::<f64>() * total_priority;
+                for (i, &priority) in self.priorities.iter().enumerate() {
+                    rand_val -= priority;
+                    if rand_val <= 0.0 {
+                        sampled_indices.push(i);
+                        break;
+                    }
+                }
+            }
+
+            Some(sampled_indices.iter().map(|&i| {
+                let (ref s, a, r, ref ns) = self.buffer[i];
+                (s.copy(), a, r, ns.copy())
+            }).collect())
+        }
+    }
+
+    pub fn update_priorities(&mut self, indices: &[usize], td_errors: &[f64]) {
+        for (&index, &td_error) in indices.iter().zip(td_errors.iter()) {
+            self.priorities[index] = td_error.abs().powf(self.alpha);
+        }
+    }
+    pub fn len(&self) -> usize {
+        self.buffer.len()
+    }
+}
 //DQN Net===============================================================================================================
 #[derive(Debug)]
 pub struct NoisyLinear {
@@ -612,179 +613,6 @@ impl DqnNet {
     }
 }
 //DQNAgent=============================================================================================================
-pub struct DQNAgent {
-    pub(crate) state_dim: i64,
-    pub(crate) action_dim: i32,
-    pub(crate) model: DqnNet,
-    pub(crate) replay_buffer: ReplayBuffer,
-    pub(crate) optimizer: Optimizer,
-    pub(crate) actions: Vec<i32>,
-    pub(crate) discount_factor: f32,
-}
-
-impl DQNAgent {
-    pub fn new(vs: Arc<Mutex<VarStore>>, state_dim: i64, action_dim: i32, replay_buffer_capacity: usize) -> DQNAgent {
-        // 加载模型
-        // let vs_loaded = Arc::new(Mutex::new(nn::VarStore::new(tch::Device::Cpu)));
-        // println!("我在读");
-        // let pb = ProgressBar::new(100);
-        // pb.set_style(ProgressStyle::default_bar()
-        //     .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta})").expect("REASON")
-        //     .progress_chars("#>-"));
-        // let loaded_dqn_net_result = DqnNet::load(vs_loaded.clone(), "./dqn_net.ot", state_dim, action_dim);
-        // let model=match loaded_dqn_net_result {
-        //     Ok(net) => {
-        //         pb.finish_with_message("Model loaded successfully");
-        //         net
-        //     },
-        //     Err(e) => {
-        //         eprintln!("Failed to load the model: {}", e);
-        //         pb.abandon_with_message("Failed to load the model");
-        //         DqnNet::new(vs.clone(), state_dim, action_dim)
-        //     }
-        // };
-        let model=DqnNet::new(vs.clone(), state_dim, action_dim);
-        let optimizer_vs = vs.clone();
-        let optimizer = nn::Adam::default().build(&mut optimizer_vs.lock().unwrap(), 1e-7).unwrap();
-        let replay_buffer = ReplayBuffer::new(replay_buffer_capacity);
-        let actions = encode_actions();
-        let discount_factor = 0.5;  // 设置折扣因子
-
-        DQNAgent { state_dim, action_dim, model, replay_buffer, optimizer, actions, discount_factor }
-    }
-    // pub fn train(&mut self, env: &mut FuzzEnv, episodes: usize, batch_size: usize) {
-    //     for _ in 0..episodes {
-    //         let mut state = env.reset();
-    //         let mut done = false;
-    //         while !done {
-    //             let action = self.get_action(&state);
-    //             //
-    //             let (next_state, reward, is_done) = env.step(action);
-    //             self.replay_buffer.push(state, action, reward, next_state.clone(&next_state));
-    //             state = next_state;
-    //             self.update_model(batch_size);
-    //             println!("update model===========");
-    //             done = is_done;
-    //         }
-    //     }
-    // }
-    // pub fn evaluate(&self, env: &mut FuzzEnv, episodes: usize) -> f64 {
-    //     let mut total_rewards = 0.0;
-    //     for _ in 0..episodes {
-    //         let mut state = env.reset();
-    //         let mut done = false;
-    //         while !done {
-    //             let action = self.get_action(&state);
-    //             let (next_state, reward, is_done) = env.step(action);
-    //             state = next_state;
-    //             total_rewards += reward as f64;
-    //             done = is_done;
-    //         }
-    //     }
-    //     //要不要修改该类型i64????
-    //     total_rewards / episodes as f64
-    // }
-    pub fn update_model(&mut self, batch_size: usize) -> Result<(), libafl_bolts::Error>{
-        if self.replay_buffer.len() < batch_size {
-            return Err(libafl::Error::Unknown("can't update".to_string(), Default::default()))
-        }
-        let samples = self.replay_buffer.sample(batch_size).unwrap();
-        let mut states = Vec::new();
-        let mut actions = Vec::new();
-        let mut rewards = Vec::new();
-        let mut next_states = Vec::new();
-
-        for (state, action, reward, next_state) in samples.into_iter() {
-            states.push(state);
-            actions.push(action);
-            rewards.push(reward);
-            next_states.push(next_state);
-        }
-
-        let state = Tensor::stack(&states, 0);
-        let action = Tensor::from_slice(&actions).unsqueeze(-1);
-        let reward = Tensor::from_slice(&rewards);
-        let next_state = Tensor::stack(&next_states, 0);
-
-        println!("State shape: {:?}", state.size());
-        println!("Action shape: {:?}", action.unsqueeze(-1).size());
-        println!("Action values: {:?}", action);
-        //实际value
-        let curr_q_value = self.model.forward(&state).gather(-1, &action, false).squeeze_dim(-1);
-        //下一个状态下最优的动作对应的Q值
-        let next_q_value = self.model.forward(&next_state).max_dim(-1, false).0.detach();
-        //期望的Q值等于即时奖励reward加上折扣因子（这里设为0.99）乘以下一个状态的最大Q值next_q_value。
-        // let expected_q_value = reward.to_kind(Kind::Float) + 0.9             * next_q_value;
-        // 期望的Q值等于即时奖励reward加上折扣因子乘以下一个状态的最大Q值next_q_value。
-        let expected_q_value = reward.to_kind(Kind::Float) + self.discount_factor * next_q_value;
-
-        let loss = curr_q_value.mse_loss(&expected_q_value, tch::Reduction::Mean);
-        println!("loss-------------: {:?}", loss);
-        let loss_value = loss.double_value(&[]) as f32;
-        let mut loss_values = LOSS_VALUES.lock().unwrap();
-
-        if loss_values.len() > 5 {
-            let last_values: Vec<f32> = loss_values.iter().rev().take(5).cloned().collect();
-            let max_diff: f32 = last_values.windows(2).map(|w| (w[0] - w[1]).abs()).fold(0.0, f32::max);
-            // if max_diff < 0.5 {
-            //     match plot_loss_values(&loss_values) {
-            //         Ok(_) => (),
-            //         Err(e) => return Err(libafl::Error::Unknown(format!("{}", e), ErrorBacktrace::new())),
-            //     }
-            //     std::process::exit(0);
-            // }
-            //动态调整折扣因子——Frame Skipping
-            if max_diff < 10.0 {
-                // if max_diff < 0.5 { //训练到收敛才结束，注释后 只有找到bug才结束
-                //     match plot_loss_values(&loss_values) {
-                //         Ok(_) => (),
-                //         Err(e) => return Err(libafl::Error::Unknown(format!("{}", e), ErrorBacktrace::new())),
-                //     }
-                //     std::process::exit(0);
-                // }
-                // else{
-                    self.discount_factor *= 1.01;  // 如果表现好，适当增大折扣因子
-                    self.discount_factor = self.discount_factor.min(1.0);  // 保证折扣因子不超过1
-                // }
-            } else {
-                self.discount_factor *= 0.99;  // 如果表现不佳，适当减小折扣因子
-                self.discount_factor = self.discount_factor.max(0.1);  // 保证折扣因子不低于0.1
-            }
-        }
-        loss_values.push(loss_value);
-
-        self.optimizer.zero_grad();
-        loss.backward();
-        self.optimizer.step();
-        Ok(())
-    }
-
-    pub fn get_action(&mut self, state: &Tensor, epsilon: f64) -> (i32,i64) {
-        //epsilon-greedy 策略：以一定的概率随机选择一个动作
-        let mut rng = rand::thread_rng();
-        let action_index;
-        let action;
-        if rng.gen::<f64>() < epsilon {
-            action_index = rng.gen_range(0..self.actions.len());
-            action = self.actions[action_index];
-        } else {
-            // 使用模型对输入的状态进行前向传播，得到Q值
-            let q_value = self.model.forward(&state.unsqueeze(0));
-            // 使用argmax函数找到Q值中最大值的索引，这个索引就是最佳的动作
-            // -1表示在最后一个维度上找最大值的索引；false表示不保持维度，即降维
-            // let action = q_value.argmax(-1, false).int64_value(&[]);
-            action_index = q_value.argmax(-1, false).int64_value(&[]) as usize % self.actions.len();
-            action = self.actions[action_index];
-
-        }
-        // Update the global action counts
-        let mut action_counts = ACTION_COUNTS.lock().unwrap();
-        let count = action_counts.entry(action).or_insert(0);
-        *count += 1;
-
-        (action, action_index as i64)
-    }
-}
 // pub struct DQNAgent {
 //     pub(crate) state_dim: i64,
 //     pub(crate) action_dim: i32,
@@ -792,77 +620,148 @@ impl DQNAgent {
 //     pub(crate) replay_buffer: ReplayBuffer,
 //     pub(crate) optimizer: Optimizer,
 //     pub(crate) actions: Vec<i32>,
-//     pub(crate) discount_factor: f64,
+//     pub(crate) discount_factor: f32,
 // }
 //
 // impl DQNAgent {
-//     pub fn new(vs: Arc<Mutex<VarStore>>, state_dim: i64, action_dim: i32, replay_buffer_capacity: usize, alpha: f64) -> DQNAgent {
-//         let model = DqnNet::new(vs.clone(), state_dim, action_dim);
+//     pub fn new(vs: Arc<Mutex<VarStore>>, state_dim: i64, action_dim: i32, replay_buffer_capacity: usize) -> DQNAgent {
+//         // 加载模型
+//         // let vs_loaded = Arc::new(Mutex::new(nn::VarStore::new(tch::Device::Cpu)));
+//         // println!("我在读");
+//         // let pb = ProgressBar::new(100);
+//         // pb.set_style(ProgressStyle::default_bar()
+//         //     .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta})").expect("REASON")
+//         //     .progress_chars("#>-"));
+//         // let loaded_dqn_net_result = DqnNet::load(vs_loaded.clone(), "./dqn_net.ot", state_dim, action_dim);
+//         // let model=match loaded_dqn_net_result {
+//         //     Ok(net) => {
+//         //         pb.finish_with_message("Model loaded successfully");
+//         //         net
+//         //     },
+//         //     Err(e) => {
+//         //         eprintln!("Failed to load the model: {}", e);
+//         //         pb.abandon_with_message("Failed to load the model");
+//         //         DqnNet::new(vs.clone(), state_dim, action_dim)
+//         //     }
+//         // };
+//         let model=DqnNet::new(vs.clone(), state_dim, action_dim);
 //         let optimizer_vs = vs.clone();
 //         let optimizer = nn::Adam::default().build(&mut optimizer_vs.lock().unwrap(), 1e-7).unwrap();
-//         let replay_buffer = ReplayBuffer::new(replay_buffer_capacity, alpha);
+//         let replay_buffer = ReplayBuffer::new(replay_buffer_capacity);
 //         let actions = encode_actions();
-//         let discount_factor = 0.5;
+//         let discount_factor = 0.5;  // 设置折扣因子
 //
 //         DQNAgent { state_dim, action_dim, model, replay_buffer, optimizer, actions, discount_factor }
 //     }
-//
-//     pub fn update_model(&mut self, batch_size: usize) -> Result<(), libafl_bolts::Error> {
-//     if self.replay_buffer.len() < batch_size {
-//         return Err(libafl::Error::Unknown("can't update".to_string(), Default::default()));
-//     }
-//     let samples = self.replay_buffer.sample(batch_size).unwrap();
-//     let mut states = Vec::new();
-//     let mut actions = Vec::new();
-//     let mut rewards = Vec::new();
-//     let mut next_states = Vec::new();
-//
-//     for (state, action, reward, next_state) in samples.into_iter() {
-//         states.push(state);
-//         actions.push(action);
-//         rewards.push(reward);
-//         next_states.push(next_state);
-//     }
-//
-//     let state = Tensor::stack(&states, 0);
-//     let action = Tensor::from_slice(&actions).unsqueeze(-1);
-//     let reward = Tensor::from_slice(&rewards);
-//     let next_state = Tensor::stack(&next_states, 0);
-//
-//     let curr_q_value = self.model.forward(&state).gather(-1, &action, false).squeeze_dim(-1);
-//     let next_q_value = self.model.forward(&next_state).max_dim(-1, false).0.detach();
-//     let expected_q_value = reward.to_kind(Kind::Float) + self.discount_factor * next_q_value;
-//
-//     let loss = curr_q_value.mse_loss(&expected_q_value, tch::Reduction::Mean);
-//     let loss_value = loss.double_value(&[]) as f32;
-//     let mut loss_values = LOSS_VALUES.lock().unwrap();
-//
-//     if loss_values.len() > 5 {
-//         let last_values: Vec<f32> = loss_values.iter().rev().take(5).cloned().collect();
-//         let max_diff: f32 = last_values.windows(2).map(|w| (w[0] - w[1]).abs()).fold(0.0, f32::max);
-//         if max_diff < 10.0 {
-//             self.discount_factor *= 1.01;
-//             self.discount_factor = self.discount_factor.min(1.0);
-//         } else {
-//             self.discount_factor *= 0.99;
-//             self.discount_factor = self.discount_factor.max(0.1);
+//     // pub fn train(&mut self, env: &mut FuzzEnv, episodes: usize, batch_size: usize) {
+//     //     for _ in 0..episodes {
+//     //         let mut state = env.reset();
+//     //         let mut done = false;
+//     //         while !done {
+//     //             let action = self.get_action(&state);
+//     //             //
+//     //             let (next_state, reward, is_done) = env.step(action);
+//     //             self.replay_buffer.push(state, action, reward, next_state.clone(&next_state));
+//     //             state = next_state;
+//     //             self.update_model(batch_size);
+//     //             println!("update model===========");
+//     //             done = is_done;
+//     //         }
+//     //     }
+//     // }
+//     // pub fn evaluate(&self, env: &mut FuzzEnv, episodes: usize) -> f64 {
+//     //     let mut total_rewards = 0.0;
+//     //     for _ in 0..episodes {
+//     //         let mut state = env.reset();
+//     //         let mut done = false;
+//     //         while !done {
+//     //             let action = self.get_action(&state);
+//     //             let (next_state, reward, is_done) = env.step(action);
+//     //             state = next_state;
+//     //             total_rewards += reward as f64;
+//     //             done = is_done;
+//     //         }
+//     //     }
+//     //     //要不要修改该类型i64????
+//     //     total_rewards / episodes as f64
+//     // }
+//     pub fn update_model(&mut self, batch_size: usize) -> Result<(), libafl_bolts::Error>{
+//         if self.replay_buffer.len() < batch_size {
+//             return Err(libafl::Error::Unknown("can't update".to_string(), Default::default()))
 //         }
+//         let samples = self.replay_buffer.sample(batch_size).unwrap();
+//         let mut states = Vec::new();
+//         let mut actions = Vec::new();
+//         let mut rewards = Vec::new();
+//         let mut next_states = Vec::new();
+//
+//         for (state, action, reward, next_state) in samples.into_iter() {
+//             states.push(state);
+//             actions.push(action);
+//             rewards.push(reward);
+//             next_states.push(next_state);
+//         }
+//
+//         let state = Tensor::stack(&states, 0);
+//         let action = Tensor::from_slice(&actions).unsqueeze(-1);
+//         let reward = Tensor::from_slice(&rewards);
+//         let next_state = Tensor::stack(&next_states, 0);
+//
+//         println!("State shape: {:?}", state.size());
+//         println!("Action shape: {:?}", action.unsqueeze(-1).size());
+//         println!("Action values: {:?}", action);
+//         //实际value
+//         let curr_q_value = self.model.forward(&state).gather(-1, &action, false).squeeze_dim(-1);
+//         //下一个状态下最优的动作对应的Q值
+//         let next_q_value = self.model.forward(&next_state).max_dim(-1, false).0.detach();
+//         //期望的Q值等于即时奖励reward加上折扣因子（这里设为0.99）乘以下一个状态的最大Q值next_q_value。
+//         // let expected_q_value = reward.to_kind(Kind::Float) + 0.9             * next_q_value;
+//         // 期望的Q值等于即时奖励reward加上折扣因子乘以下一个状态的最大Q值next_q_value。
+//         let expected_q_value = reward.to_kind(Kind::Float) + self.discount_factor * next_q_value;
+//
+//         let loss = curr_q_value.mse_loss(&expected_q_value, tch::Reduction::Mean);
+//         println!("loss-------------: {:?}", loss);
+//         let loss_value = loss.double_value(&[]) as f32;
+//         let mut loss_values = LOSS_VALUES.lock().unwrap();
+//
+//         if loss_values.len() > 5 {
+//             let last_values: Vec<f32> = loss_values.iter().rev().take(5).cloned().collect();
+//             let max_diff: f32 = last_values.windows(2).map(|w| (w[0] - w[1]).abs()).fold(0.0, f32::max);
+//             // if max_diff < 0.5 {
+//             //     match plot_loss_values(&loss_values) {
+//             //         Ok(_) => (),
+//             //         Err(e) => return Err(libafl::Error::Unknown(format!("{}", e), ErrorBacktrace::new())),
+//             //     }
+//             //     std::process::exit(0);
+//             // }
+//             //动态调整折扣因子——Frame Skipping
+//             if max_diff < 10.0 {
+//                 // if max_diff < 0.5 { //训练到收敛才结束，注释后 只有找到bug才结束
+//                 //     match plot_loss_values(&loss_values) {
+//                 //         Ok(_) => (),
+//                 //         Err(e) => return Err(libafl::Error::Unknown(format!("{}", e), ErrorBacktrace::new())),
+//                 //     }
+//                 //     std::process::exit(0);
+//                 // }
+//                 // else{
+//                     self.discount_factor *= 1.01;  // 如果表现好，适当增大折扣因子
+//                     self.discount_factor = self.discount_factor.min(1.0);  // 保证折扣因子不超过1
+//                 // }
+//             } else {
+//                 self.discount_factor *= 0.99;  // 如果表现不佳，适当减小折扣因子
+//                 self.discount_factor = self.discount_factor.max(0.1);  // 保证折扣因子不低于0.1
+//             }
+//         }
+//         loss_values.push(loss_value);
+//
+//         self.optimizer.zero_grad();
+//         loss.backward();
+//         self.optimizer.step();
+//         Ok(())
 //     }
-//     loss_values.push(loss_value);
 //
-//     self.optimizer.zero_grad();
-//     loss.backward();
-//     self.optimizer.step();
-//
-//     let td_errors: Vec<f64> = (curr_q_value - expected_q_value).abs().iter::<f64>().unwrap().collect();
-//     let indices: Vec<usize> = (0..batch_size).collect();
-//     self.replay_buffer.update_priorities(&indices, &td_errors);
-//
-//     Ok(())
-// }
-//
-//     pub fn get_action(&mut self, state: &Tensor, epsilon: f64) -> (i32, i64) {
-//         // epsilon-greedy 策略：以一定的概率随机选择一个动作
+//     pub fn get_action(&mut self, state: &Tensor, epsilon: f64) -> (i32,i64) {
+//         //epsilon-greedy 策略：以一定的概率随机选择一个动作
 //         let mut rng = rand::thread_rng();
 //         let action_index;
 //         let action;
@@ -874,8 +773,10 @@ impl DQNAgent {
 //             let q_value = self.model.forward(&state.unsqueeze(0));
 //             // 使用argmax函数找到Q值中最大值的索引，这个索引就是最佳的动作
 //             // -1表示在最后一个维度上找最大值的索引；false表示不保持维度，即降维
+//             // let action = q_value.argmax(-1, false).int64_value(&[]);
 //             action_index = q_value.argmax(-1, false).int64_value(&[]) as usize % self.actions.len();
 //             action = self.actions[action_index];
+//
 //         }
 //         // Update the global action counts
 //         let mut action_counts = ACTION_COUNTS.lock().unwrap();
@@ -885,3 +786,103 @@ impl DQNAgent {
 //         (action, action_index as i64)
 //     }
 // }
+pub struct DQNAgent {
+    pub(crate) state_dim: i64,
+    pub(crate) action_dim: i32,
+    pub(crate) model: DqnNet,
+    pub(crate) replay_buffer: ReplayBuffer,
+    pub(crate) optimizer: Optimizer,
+    pub(crate) actions: Vec<i32>,
+    pub(crate) discount_factor: f64,
+}
+
+impl DQNAgent {
+    pub fn new(vs: Arc<Mutex<VarStore>>, state_dim: i64, action_dim: i32, replay_buffer_capacity: usize, alpha: f64) -> DQNAgent {
+        let model = DqnNet::new(vs.clone(), state_dim, action_dim);
+        let optimizer_vs = vs.clone();
+        let optimizer = nn::Adam::default().build(&mut optimizer_vs.lock().unwrap(), 1e-7).unwrap();
+        let replay_buffer = ReplayBuffer::new(replay_buffer_capacity, alpha);
+        let actions = encode_actions();
+        let discount_factor = 0.5;
+
+        DQNAgent { state_dim, action_dim, model, replay_buffer, optimizer, actions, discount_factor }
+    }
+
+    pub fn update_model(&mut self, batch_size: usize) -> Result<(), libafl_bolts::Error> {
+    if self.replay_buffer.len() < batch_size {
+        return Err(libafl::Error::Unknown("can't update".to_string(), Default::default()));
+    }
+    let samples = self.replay_buffer.sample(batch_size).unwrap();
+    let mut states = Vec::new();
+    let mut actions = Vec::new();
+    let mut rewards = Vec::new();
+    let mut next_states = Vec::new();
+
+    for (state, action, reward, next_state) in samples.into_iter() {
+        states.push(state);
+        actions.push(action);
+        rewards.push(reward);
+        next_states.push(next_state);
+    }
+
+    let state = Tensor::stack(&states, 0);
+    let action = Tensor::from_slice(&actions).unsqueeze(-1);
+    let reward = Tensor::from_slice(&rewards);
+    let next_state = Tensor::stack(&next_states, 0);
+
+    let curr_q_value = self.model.forward(&state).gather(-1, &action, false).squeeze_dim(-1);
+    let next_q_value = self.model.forward(&next_state).max_dim(-1, false).0.detach();
+    let expected_q_value = reward.to_kind(Kind::Float) + self.discount_factor * next_q_value;
+
+    let loss = curr_q_value.mse_loss(&expected_q_value, tch::Reduction::Mean);
+    let loss_value = loss.double_value(&[]) as f32;
+    let mut loss_values = LOSS_VALUES.lock().unwrap();
+
+    if loss_values.len() > 5 {
+        let last_values: Vec<f32> = loss_values.iter().rev().take(5).cloned().collect();
+        let max_diff: f32 = last_values.windows(2).map(|w| (w[0] - w[1]).abs()).fold(0.0, f32::max);
+        if max_diff < 10.0 {
+            self.discount_factor *= 1.01;
+            self.discount_factor = self.discount_factor.min(1.0);
+        } else {
+            self.discount_factor *= 0.99;
+            self.discount_factor = self.discount_factor.max(0.1);
+        }
+    }
+    loss_values.push(loss_value);
+
+    self.optimizer.zero_grad();
+    loss.backward();
+    self.optimizer.step();
+
+    let td_errors: Vec<f64> = (curr_q_value - expected_q_value).abs().iter::<f64>().unwrap().collect();
+    let indices: Vec<usize> = (0..batch_size).collect();
+    self.replay_buffer.update_priorities(&indices, &td_errors);
+
+    Ok(())
+}
+
+    pub fn get_action(&mut self, state: &Tensor, epsilon: f64) -> (i32, i64) {
+        // epsilon-greedy 策略：以一定的概率随机选择一个动作
+        let mut rng = rand::thread_rng();
+        let action_index;
+        let action;
+        if rng.gen::<f64>() < epsilon {
+            action_index = rng.gen_range(0..self.actions.len());
+            action = self.actions[action_index];
+        } else {
+            // 使用模型对输入的状态进行前向传播，得到Q值
+            let q_value = self.model.forward(&state.unsqueeze(0));
+            // 使用argmax函数找到Q值中最大值的索引，这个索引就是最佳的动作
+            // -1表示在最后一个维度上找最大值的索引；false表示不保持维度，即降维
+            action_index = q_value.argmax(-1, false).int64_value(&[]) as usize % self.actions.len();
+            action = self.actions[action_index];
+        }
+        // Update the global action counts
+        let mut action_counts = ACTION_COUNTS.lock().unwrap();
+        let count = action_counts.entry(action).or_insert(0);
+        *count += 1;
+
+        (action, action_index as i64)
+    }
+}

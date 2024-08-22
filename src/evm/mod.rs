@@ -498,7 +498,8 @@ lazy_static! {
             VS.clone(),
             (*STATE_DIM.lock().unwrap()).into(),
             (*ACTION_DIM.lock().unwrap()).into(),
-            (*REPLAY_BUFFER_CAPACITY.lock().unwrap()).try_into().unwrap()
+            (*REPLAY_BUFFER_CAPACITY.lock().unwrap()).try_into().unwrap(),
+            0.6
         )
     ));
     pub static ref LOSS_VALUES: Mutex<Vec<f32>> = Mutex::new(Vec::new());
