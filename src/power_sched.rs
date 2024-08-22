@@ -2,21 +2,18 @@
 //! stage.
 
 use core::{fmt::Debug, marker::PhantomData};
-use std::collections::HashMap;
 use std::sync::atomic::Ordering;
 use std::sync::Mutex;
-use crate::evm::MUTATE_COUNT;
+use std::time::{SystemTime, UNIX_EPOCH};
+
 use lazy_static::lazy_static;
-use libafl::{corpus::{Corpus, CorpusId}, Error, ExecuteInputResult, executors::{Executor, HasObservers}, fuzzer::Evaluator, mark_feature_time, mutators::Mutator, prelude::Testcase, stages::{mutational::MutatedTransform, MutationalStage, Stage}, start_timer, state::{ HasCorpus, HasMetadata, HasRand, UsesState}};
 use libafl::mutators::MutationResult;
 use libafl::prelude::mutational::MutatedTransformPost;
-use libafl_bolts::ErrorBacktrace;
+use libafl::{corpus::{Corpus, CorpusId}, executors::{Executor, HasObservers}, fuzzer::Evaluator, mark_feature_time, mutators::Mutator, prelude::Testcase, stages::{mutational::MutatedTransform, MutationalStage, Stage}, start_timer, state::{HasCorpus, HasMetadata, HasRand, UsesState}, Error, ExecuteInputResult};
 use plotters::prelude::*;
-use std::time::{SystemTime, UNIX_EPOCH};
-use crate::evm::{ACTION_COUNTS, EPSILON, LOSS_VALUES, REWARD_VALUES, SOLUTION_FLAG};
-// use crate::evm::{AGENT, ENV, EPISODES, BATCH_SIZE};
-use crate::global_info::{calculate_value};
 
+use crate::evm::MUTATE_COUNT;
+use crate::evm::{EPSILON, REWARD_VALUES, SOLUTION_FLAG};
 
 pub trait TestcaseScoreWithId<S>
 where
@@ -154,13 +151,12 @@ where
 
         //dqn_1
         let mut env = crate::evm::ENV.lock().unwrap();
-        // let episodes = *crate::evm::EPISODES.lock().unwrap();
         let batch_size = *crate::evm::BATCH_SIZE.lock().unwrap();
         let mut agent = crate::evm::AGENT.lock().unwrap();
+        // let episodes = *crate::evm::EPISODES.lock().unwrap();
         // let mut var_store = VAR_STORE.lock().unwrap();
         // var_store.load("./test_model").unwrap();
         // let mut agent = DQNAgent::new_from_model(&mut var_store, "./test_model", *crate::evm::STATE_DIM.lock().unwrap() as i64, *crate::evm::ACTION_DIM.lock().unwrap() as i64, *crate::evm::REPLAY_BUFFER_CAPACITY.lock().unwrap() as usize).unwrap();
-
         let mut state_tensor = env.reset();
         let mut epsilon = EPSILON.lock().unwrap();//贪心程度，平衡利用和搜索
         let (action,action_index) = agent.get_action(&state_tensor, *epsilon);
@@ -169,14 +165,30 @@ where
         //执行变异
         let ret = self.perform_mutational(fuzzer, executor, state, manager, corpus_idx);
 
-        //dqn_评估
+        //dqn评估
         let (next_state, reward) = env.step_2();
+        // // 计算TD误差
+        // let q_values = agent.model.forward(&state_tensor);
+        // let current_q_value = q_values.get(action_index as i64);
+        // let next_q_values = agent.model.forward(&next_state);
+        // let max_next_q_value = next_q_values.max_dim(-1, true).0;
+        // let target_q_value = reward + agent.discount_factor * max_next_q_value;
+        // let td_error = target_q_value - current_q_value;
+        // agent.replay_buffer.push(state_tensor, action_index, reward, next_state.clone(&Default::default()), f64::try_from(td_error).unwrap());
         agent.replay_buffer.push(state_tensor, action_index, reward, next_state.clone(&next_state));
-        state_tensor=next_state;
-        agent.update_model(batch_size as usize);
+        state_tensor = next_state;
+        // agent.update_model(batch_size as usize);
+        //println!(">>update model");
+        if MUTATE_COUNT.load(Ordering::SeqCst) % 2 == 0 {
+            if agent.replay_buffer.len() >= batch_size as usize {
+                agent.update_model(batch_size as usize).expect("update_model panic");
+                println!(">>update model");
+            } else {
+                println!("Not enough samples in replay buffer to update model");
+            }
+        }
 
         // *epsilon = (*epsilon * *EPSILON_DECAY.lock().unwrap()).max(*FINAL_EPSILON.lock().unwrap());
-        println!(">>update model");
         // if MUTATE_COUNT.load(std::sync::atomic::Ordering::SeqCst) % 5000 == 0 {
         //     agent.model.save("./dqn_net.ot").unwrap();
         //

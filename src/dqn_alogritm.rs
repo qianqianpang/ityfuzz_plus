@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::collections::VecDeque;
 use std::convert::TryInto;
@@ -8,17 +9,16 @@ use std::vec::Vec;
 use bytes::Bytes;
 use csv::Reader;
 use lazy_static::lazy_static;
-use rand::prelude::IteratorRandom;
 use rand::Rng;
 use revm_primitives::{Env, U256};
-use tch::{Kind, nn, nn::Module, nn::Optimizer, nn::OptimizerConfig, no_grad, Tensor};
 use tch::nn::VarStore;
+use tch::{nn, nn::Module, nn::Optimizer, nn::OptimizerConfig, no_grad, Kind, Tensor};
 
 use crate::evm::abi::BoxedABI;
 use crate::evm::input::{EVMInput, EVMInputTy};
-use crate::evm::{ACTION_COUNTS, LOSS_VALUES, REWARD_VALUES};
 use crate::evm::mutator::AccessPattern;
 use crate::evm::types::EVMAddress;
+use crate::evm::{ACTION_COUNTS, LOSS_VALUES, REWARD_VALUES};
 use crate::global_info::get_value;
 use crate::input::VMInputT;
 use crate::state_input::StagedVMState;
@@ -399,11 +399,125 @@ impl ReplayBuffer {
         self.buffer.len()
     }
 }
+
+// pub struct ReplayBuffer {
+//     buffer: VecDeque<(Tensor, i64, i64, Tensor)>,
+//     priorities: VecDeque<f64>,
+//     capacity: usize,
+//     alpha: f64,//priorities计算为误差的 alpha 次幂。
+// }
+//
+// impl ReplayBuffer {
+//     pub fn new(capacity: usize, alpha: f64) -> ReplayBuffer {
+//         ReplayBuffer {
+//             buffer: VecDeque::with_capacity(capacity),
+//             priorities: VecDeque::with_capacity(capacity),
+//             capacity,
+//             alpha,
+//         }
+//     }
+//
+//     pub fn push(&mut self, state: Tensor, action: i64, reward: i64, next_state: Tensor, td_error: f64) {
+//         if self.buffer.len() == self.capacity {
+//             self.buffer.pop_front();
+//             self.priorities.pop_front();
+//         }
+//         self.buffer.push_back((state, action, reward, next_state));
+//         self.priorities.push_back(td_error.abs().powf(self.alpha));
+//     }
+//
+//     pub fn sample(&self, batch_size: usize) -> Option<Vec<(Tensor, i64, i64, Tensor)>> {
+//         if self.buffer.len() < batch_size {
+//             None
+//         } else {
+//             let mut rng = rand::thread_rng();
+//             let total_priority: f64 = self.priorities.iter().sum();
+//             let mut sampled_indices = Vec::with_capacity(batch_size);
+//
+//             for _ in 0..batch_size {
+//                 let mut rand_val: f64 = rng.gen::<f64>() * total_priority;
+//                 for (i, &priority) in self.priorities.iter().enumerate() {
+//                     rand_val -= priority;
+//                     if rand_val <= 0.0 {
+//                         sampled_indices.push(i);
+//                         break;
+//                     }
+//                 }
+//             }
+//
+//             Some(sampled_indices.iter().map(|&i| {
+//                 let (ref s, a, r, ref ns) = self.buffer[i];
+//                 (s.copy(), a, r, ns.copy())
+//             }).collect())
+//         }
+//     }
+//
+//     pub fn update_priorities(&mut self, indices: &[usize], td_errors: &[f64]) {
+//         for (&index, &td_error) in indices.iter().zip(td_errors.iter()) {
+//             self.priorities[index] = td_error.abs().powf(self.alpha);
+//         }
+//     }
+//     pub fn len(&self) -> usize {
+//         self.buffer.len()
+//     }
+// }
 //DQN Net===============================================================================================================
 #[derive(Debug)]
+pub struct NoisyLinear {
+    weight_mu: Tensor,
+    weight_sigma: Tensor,
+    bias_mu: Tensor,
+    bias_sigma: Tensor,
+    weight_epsilon: RefCell<Tensor>,
+    bias_epsilon: RefCell<Tensor>,
+}
+
+impl NoisyLinear {
+    pub fn new(vs: &nn::Path, in_features: i64, out_features: i64) -> Self {
+        let weight_mu = vs.randn("weight_mu", &[out_features, in_features], 0.0, 0.017);
+        let weight_sigma = vs.ones("weight_sigma", &[out_features, in_features]) * 0.017;
+        let bias_mu = vs.randn("bias_mu", &[out_features], 0.0, 0.017);
+        let bias_sigma = vs.ones("bias_sigma", &[out_features]) * 0.017;
+
+        // 使用 RefCell 包装 weight_epsilon 和 bias_epsilon
+        let weight_epsilon = RefCell::new(Tensor::zeros(&[out_features, in_features], (tch::Kind::Float, vs.device())));
+        let bias_epsilon = RefCell::new(Tensor::zeros(&[out_features], (tch::Kind::Float, vs.device())));
+
+        NoisyLinear {
+            weight_mu,
+            weight_sigma,
+            bias_mu,
+            bias_sigma,
+            weight_epsilon,
+            bias_epsilon,
+        }
+    }
+
+    pub fn forward(&self, input: &Tensor) -> Tensor {
+        *self.weight_epsilon.borrow_mut() = Tensor::randn(&[self.weight_mu.size()[0], self.weight_mu.size()[1]], (tch::Kind::Float, self.weight_mu.device()));
+        *self.bias_epsilon.borrow_mut() = Tensor::randn(&[self.bias_mu.size()[0]], (tch::Kind::Float, self.bias_mu.device()));
+
+        let weight = &self.weight_mu + &self.weight_sigma * &*self.weight_epsilon.borrow();
+        let bias = &self.bias_mu + &self.bias_sigma * &*self.bias_epsilon.borrow();
+
+        input.matmul(&weight.tr()) + bias
+    }
+}
+
+impl nn::Module for NoisyLinear {
+    fn forward(&self, input: &Tensor) -> Tensor {
+        let mut noisy_layer = self.clone();
+        NoisyLinear::forward(&mut noisy_layer, input)  // 调用结构体中的 forward 函数
+    }
+}
+
+
+#[derive(Debug)]
 pub struct DqnNet {
-    fc1: nn::Linear,
+    // fc1: nn::Linear,
+    fc1: NoisyLinear,
     fc2: nn::Linear,
+    // fc2: NoisyLinear,
     fc3: nn::Linear,
     fc4: nn::Linear,
     vs: Arc<Mutex<VarStore>>,  // 存储神经网络参数的结构
@@ -441,8 +555,10 @@ impl DqnNet {
     pub fn new(vs: Arc<Mutex<nn::VarStore>>, input_dim: i64, output_dim: i32) -> DqnNet {
         let vs_clone = Arc::clone(&vs);
         let mut vs = vs.lock().unwrap();
-        let mut fc1 = nn::linear(vs.root() / "fc1", input_dim, 256, Default::default());
+        // let mut fc1 = nn::linear(vs.root() / "fc1", input_dim, 256, Default::default());
+        let fc1 = NoisyLinear::new(&(vs.root() / "fc1"), input_dim, 256);
         let mut fc2 = nn::linear(vs.root() / "fc2", 256, 128, Default::default());
+        // let fc2 = NoisyLinear::new(&(vs.root() / "fc2"), 256, 128);
         let mut fc3 = nn::linear(vs.root() / "fc3", 128, 64, Default::default());
         let mut fc4 = nn::linear(vs.root() / "fc5", 64, output_dim as i64, Default::default());
 
@@ -530,7 +646,6 @@ impl DQNAgent {
         let model=DqnNet::new(vs.clone(), state_dim, action_dim);
         let optimizer_vs = vs.clone();
         let optimizer = nn::Adam::default().build(&mut optimizer_vs.lock().unwrap(), 1e-7).unwrap();
-
         let replay_buffer = ReplayBuffer::new(replay_buffer_capacity);
         let actions = encode_actions();
         let discount_factor = 0.5;  // 设置折扣因子
@@ -571,7 +686,7 @@ impl DQNAgent {
     // }
     pub fn update_model(&mut self, batch_size: usize) -> Result<(), libafl_bolts::Error>{
         if self.replay_buffer.len() < batch_size {
-            return Err(libafl::Error::Unknown("111".to_string(), Default::default()))
+            return Err(libafl::Error::Unknown("can't update".to_string(), Default::default()))
         }
         let samples = self.replay_buffer.sample(batch_size).unwrap();
         let mut states = Vec::new();
@@ -670,3 +785,103 @@ impl DQNAgent {
         (action, action_index as i64)
     }
 }
+// pub struct DQNAgent {
+//     pub(crate) state_dim: i64,
+//     pub(crate) action_dim: i32,
+//     pub(crate) model: DqnNet,
+//     pub(crate) replay_buffer: ReplayBuffer,
+//     pub(crate) optimizer: Optimizer,
+//     pub(crate) actions: Vec<i32>,
+//     pub(crate) discount_factor: f64,
+// }
+//
+// impl DQNAgent {
+//     pub fn new(vs: Arc<Mutex<VarStore>>, state_dim: i64, action_dim: i32, replay_buffer_capacity: usize, alpha: f64) -> DQNAgent {
+//         let model = DqnNet::new(vs.clone(), state_dim, action_dim);
+//         let optimizer_vs = vs.clone();
+//         let optimizer = nn::Adam::default().build(&mut optimizer_vs.lock().unwrap(), 1e-7).unwrap();
+//         let replay_buffer = ReplayBuffer::new(replay_buffer_capacity, alpha);
+//         let actions = encode_actions();
+//         let discount_factor = 0.5;
+//
+//         DQNAgent { state_dim, action_dim, model, replay_buffer, optimizer, actions, discount_factor }
+//     }
+//
+//     pub fn update_model(&mut self, batch_size: usize) -> Result<(), libafl_bolts::Error> {
+//     if self.replay_buffer.len() < batch_size {
+//         return Err(libafl::Error::Unknown("can't update".to_string(), Default::default()));
+//     }
+//     let samples = self.replay_buffer.sample(batch_size).unwrap();
+//     let mut states = Vec::new();
+//     let mut actions = Vec::new();
+//     let mut rewards = Vec::new();
+//     let mut next_states = Vec::new();
+//
+//     for (state, action, reward, next_state) in samples.into_iter() {
+//         states.push(state);
+//         actions.push(action);
+//         rewards.push(reward);
+//         next_states.push(next_state);
+//     }
+//
+//     let state = Tensor::stack(&states, 0);
+//     let action = Tensor::from_slice(&actions).unsqueeze(-1);
+//     let reward = Tensor::from_slice(&rewards);
+//     let next_state = Tensor::stack(&next_states, 0);
+//
+//     let curr_q_value = self.model.forward(&state).gather(-1, &action, false).squeeze_dim(-1);
+//     let next_q_value = self.model.forward(&next_state).max_dim(-1, false).0.detach();
+//     let expected_q_value = reward.to_kind(Kind::Float) + self.discount_factor * next_q_value;
+//
+//     let loss = curr_q_value.mse_loss(&expected_q_value, tch::Reduction::Mean);
+//     let loss_value = loss.double_value(&[]) as f32;
+//     let mut loss_values = LOSS_VALUES.lock().unwrap();
+//
+//     if loss_values.len() > 5 {
+//         let last_values: Vec<f32> = loss_values.iter().rev().take(5).cloned().collect();
+//         let max_diff: f32 = last_values.windows(2).map(|w| (w[0] - w[1]).abs()).fold(0.0, f32::max);
+//         if max_diff < 10.0 {
+//             self.discount_factor *= 1.01;
+//             self.discount_factor = self.discount_factor.min(1.0);
+//         } else {
+//             self.discount_factor *= 0.99;
+//             self.discount_factor = self.discount_factor.max(0.1);
+//         }
+//     }
+//     loss_values.push(loss_value);
+//
+//     self.optimizer.zero_grad();
+//     loss.backward();
+//     self.optimizer.step();
+//
+//     let td_errors: Vec<f64> = (curr_q_value - expected_q_value).abs().iter::<f64>().unwrap().collect();
+//     let indices: Vec<usize> = (0..batch_size).collect();
+//     self.replay_buffer.update_priorities(&indices, &td_errors);
+//
+//     Ok(())
+// }
+//
+//     pub fn get_action(&mut self, state: &Tensor, epsilon: f64) -> (i32, i64) {
+//         // epsilon-greedy 策略：以一定的概率随机选择一个动作
+//         let mut rng = rand::thread_rng();
+//         let action_index;
+//         let action;
+//         if rng.gen::<f64>() < epsilon {
+//             action_index = rng.gen_range(0..self.actions.len());
+//             action = self.actions[action_index];
+//         } else {
+//             // 使用模型对输入的状态进行前向传播，得到Q值
+//             let q_value = self.model.forward(&state.unsqueeze(0));
+//             // 使用argmax函数找到Q值中最大值的索引，这个索引就是最佳的动作
+//             // -1表示在最后一个维度上找最大值的索引；false表示不保持维度，即降维
+//             action_index = q_value.argmax(-1, false).int64_value(&[]) as usize % self.actions.len();
+//             action = self.actions[action_index];
+//         }
+//         // Update the global action counts
+//         let mut action_counts = ACTION_COUNTS.lock().unwrap();
+//         let count = action_counts.entry(action).or_insert(0);
+//         *count += 1;
+//
+//         (action, action_index as i64)
+//     }
+// }

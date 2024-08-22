@@ -26,6 +26,8 @@ pub mod types;
 pub mod utils;
 pub mod vm;
 
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 use std::{
     cell::RefCell,
     collections::{HashMap, HashSet},
@@ -36,8 +38,6 @@ use std::{
     rc::Rc,
     str::FromStr,
 };
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
 
 use blaz::{
     builder::{BuildJob, BuildJobResult},
@@ -52,27 +52,27 @@ use input::{ConciseEVMInput, EVMInput};
 use itertools::Itertools;
 use lazy_static::lazy_static;
 use num_cpus;
-use plotters::prelude::*;
 use onchain::endpoints::{Chain, OnChainConfig};
 use oracles::{erc20::IERC20OracleFlashloan, v2_pair::PairBalanceOracle};
+use plotters::prelude::*;
 use producers::erc20::ERC20Producer;
 use revm_primitives::B160;
 // use revm_primitives::ruint::aliases::B160;
 use serde::Deserialize;
 use serde_json::json;
-use tch::Device;
 use tch::nn::VarStore;
+use tch::Device;
 use tracing::debug;
 use types::{EVMAddress, EVMFuzzState, EVMU256};
 use vm::EVMState;
 
 use self::types::EVMQueueExecutor;
+use crate::dqn_alogritm::{DQNAgent, FuzzEnv};
 use crate::{
     fuzzers::evm_fuzzer::evm_fuzzer,
     oracle::{Oracle, Producer},
     state::FuzzState,
 };
-use crate::dqn_alogritm::{DQNAgent, FuzzEnv};
 
 pub const PRESET_WETH: &str = "0x4200000000000000000000000000000000000006";
 
