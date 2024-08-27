@@ -486,7 +486,10 @@ pub struct DqnNet {
     fc1: NoisyLinear,
     lstm: nn::LSTM,
     fc3: nn::Linear,
-    fc4: nn::Linear,
+    // fc4: nn::Linear,
+    value_stream: nn::Linear,   // 用于计算状态值V(s)的层
+    advantage_stream: nn::Linear, // 用于计算优势函数A(s, a)的层
+    output_layer: nn::Linear,   // 用于将V(s)和A(s, a)组合为Q值的层
     vs: Arc<Mutex<VarStore>>,
 }
 
@@ -519,16 +522,53 @@ fn zero_init(tensor: &mut Tensor) {
     });
 }
 impl DqnNet {
+    // pub fn new(vs: Arc<Mutex<nn::VarStore>>, input_dim: i64, output_dim: i32) -> DqnNet {
+    //     let vs_clone = Arc::clone(&vs);
+    //     let mut vs = vs.lock().unwrap();
+    //
+    //     let fc1 = NoisyLinear::new(&(vs.root() / "fc1"), input_dim, 256);
+    //     let lstm = nn::lstm(&(vs.root() / "lstm"), 256, 128, Default::default()); // Initialize LSTM layer
+    //     let fc3 = nn::linear(vs.root() / "fc3", 128, 64, Default::default());
+    //     let fc4 = nn::linear(vs.root() / "fc4", 64, output_dim as i64, Default::default());
+    //
+    //     DqnNet { fc1, lstm, fc3, fc4, vs: vs_clone }
+    // }
+    //
+    // pub fn forward(&self, x: &Tensor) -> Tensor {
+    //     let x = x.apply(&self.fc1).relu();
+    //     let x = x.unsqueeze(1);
+    //     let lstm_state = self.lstm.zero_state(1);
+    //     let (x, _) = self.lstm.seq_init(&x, &lstm_state);
+    //     let x = x.squeeze();
+    //     x.apply(&self.fc3)
+    //         .relu()
+    //         .apply(&self.fc4)
+    // }
+
     pub fn new(vs: Arc<Mutex<nn::VarStore>>, input_dim: i64, output_dim: i32) -> DqnNet {
         let vs_clone = Arc::clone(&vs);
         let mut vs = vs.lock().unwrap();
 
         let fc1 = NoisyLinear::new(&(vs.root() / "fc1"), input_dim, 256);
-        let lstm = nn::lstm(&(vs.root() / "lstm"), 256, 128, Default::default()); // Initialize LSTM layer
+        let lstm = nn::lstm(&(vs.root() / "lstm"), 256, 128, Default::default());
         let fc3 = nn::linear(vs.root() / "fc3", 128, 64, Default::default());
-        let fc4 = nn::linear(vs.root() / "fc4", 64, output_dim as i64, Default::default());
 
-        DqnNet { fc1, lstm, fc3, fc4, vs: vs_clone }
+        // 为状态值函数V(s)和优势函数A(s, a)添加线性层
+        let value_stream = nn::linear(vs.root() / "value_stream", 64, 1, Default::default());
+        let advantage_stream = nn::linear(vs.root() / "advantage_stream", 64, output_dim as i64, Default::default());
+
+        // 用于输出最终Q值
+        let output_layer = nn::linear(vs.root() / "output_layer", output_dim as i64, output_dim as i64, Default::default());
+
+        DqnNet {
+            fc1,
+            lstm,
+            fc3,
+            value_stream,
+            advantage_stream,
+            output_layer,
+            vs: vs_clone,
+        }
     }
 
     pub fn forward(&self, x: &Tensor) -> Tensor {
@@ -537,10 +577,25 @@ impl DqnNet {
         let lstm_state = self.lstm.zero_state(1);
         let (x, _) = self.lstm.seq_init(&x, &lstm_state);
         let x = x.squeeze();
-        x.apply(&self.fc3)
-            .relu()
-            .apply(&self.fc4)
+        let x = x.apply(&self.fc3).relu();
+
+        // 计算状态值V(s)和优势函数A(s, a)
+        let value = x.apply(&self.value_stream); // V(s)
+        let advantage = x.apply(&self.advantage_stream); // A(s, a)
+
+        // 检查 advantage 是否有效
+        if advantage.defined() {
+            let advantage_mean = advantage.mean_dim(Some(0), false, Kind::Float);
+            let advantage_centered = advantage - advantage_mean;
+            let q_value = value + advantage_centered;
+            q_value
+        } else {
+            panic!("Advantage tensor is not defined.");
+        }
     }
+
+
+
     // pub fn save(&self, path: &str) -> Result<(), Box<dyn Error>> {
     //     let vs = self.vs.lock().unwrap();
     //     vs.save(path)?;
