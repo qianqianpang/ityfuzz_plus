@@ -485,7 +485,7 @@ impl OracleType {
 }
 lazy_static! {
     //dqn相关
-    pub static ref STATE_DIM: Mutex<i32> = Mutex::new(4);
+    pub static ref STATE_DIM: Mutex<i32> = Mutex::new(28);
     pub static ref ACTION_DIM: Mutex<i32> = Mutex::new(16);
     pub static ref REPLAY_BUFFER_CAPACITY: Mutex<i32> = Mutex::new(10000);
     pub static ref EPISODES: Mutex<i64> = Mutex::new(10000000000);
@@ -524,9 +524,21 @@ lazy_static! {
 
     //每个action编号及对应的使用次数
     pub static ref ACTION_COUNTS: Mutex<HashMap<i32, i64>> = Mutex::new(HashMap::new());
+    //设置一个全局vector，存储action_frequency
+    pub static ref ACTION_FREQUENCY: Mutex<Vec<f32>> = Mutex::new(Vec::new());
+
+    //设置一个全局的hashmap，存储八个关键opcode的名字及使用次数
+    pub static ref OPCODE_COUNTS: Mutex<HashMap<String, i64>> = Mutex::new(HashMap::new());
+    //设置一个opcode的使用频率占比
+    pub static ref OPCODE_FREQUENCY: Mutex<Vec<f32>> = Mutex::new(Vec::new());
 }
 
-
+impl fmt::Debug for ACTION_FREQUENCY {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let action_frequency = self.lock().unwrap();
+        f.debug_list().entries(&*action_frequency).finish()
+    }
+}
 
 fn plot_mutate_counts_vec() -> Result<(), Box<dyn std::error::Error>> {
     let root = BitMapBackend::new("res/fuzz_mutation_counts.png", (640, 480)).into_drawing_area();

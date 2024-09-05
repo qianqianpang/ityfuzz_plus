@@ -18,11 +18,10 @@ use crate::evm::abi::BoxedABI;
 use crate::evm::input::{EVMInput, EVMInputTy};
 use crate::evm::mutator::AccessPattern;
 use crate::evm::types::EVMAddress;
-use crate::evm::{ACTION_COUNTS, LOSS_VALUES, REWARD_VALUES};
+use crate::evm::{ACTION_COUNTS, ACTION_FREQUENCY, LOSS_VALUES, OPCODE_COUNTS, OPCODE_FREQUENCY, REWARD_VALUES};
 use crate::global_info::get_value;
 use crate::input::VMInputT;
 use crate::state_input::StagedVMState;
-
 lazy_static! {
     pub static ref GLOBAL_INPUT: Mutex<EVMInput> = Mutex::new(EVMInput {
         input_type: EVMInputTy::ABI,
@@ -105,7 +104,6 @@ pub fn get_mutator_selection() -> HashMap<&'static str, u8> {
 }
 //action设计======================================================================================================================
 lazy_static! {
-    //最大值  520190016，可能要改为f32  f64??????
     static ref ACTIONS: Mutex<Vec<i64>> = Mutex::new(Vec::new());
 }
 
@@ -125,16 +123,51 @@ fn read_nums_from_csv(file_path: &str) -> Result<Vec<i64>, Box<dyn Error>> {
     Ok(nums)
 }
 pub fn encode_actions() -> Vec<i32> {
-    // let nums = read_nums_from_csv("action.csv").unwrap();
-    // println!("长长------{}", nums.len());
-    // let mut actions = ACTIONS.lock().unwrap();
-    // for num in nums {
-    //     actions.push(num);
-    // }
-    // actions.clone()
     let arr : [i32; 16] = [101, 102, 201, 202, 301, 302, 410, 421, 422, 510, 521, 522, 610, 620, 631, 632];
     let vec = arr.to_vec();
     vec
+}
+
+//定一个函数，获取当前的ACTION_COUNTS，并计算出每个actioN的频率赋值给ACTION_FREQUENCY
+fn update_action_frequency(action:i32) {
+    let mut action_counts = ACTION_COUNTS.lock().unwrap();
+    let count = action_counts.entry(action).or_insert(0);
+    *count += 1;
+    let all_actions = vec![101, 102, 201, 202, 301, 302, 410, 421, 422, 510, 521, 522, 610, 620, 631, 632];
+    let total_count: i32 = action_counts.values().map(|&v| v as i32).sum();
+    let mut frequencies = Vec::new();
+    for action in all_actions {
+        let count = *action_counts.get(&action).unwrap_or(&0);
+        let frequency = count as f32 / total_count as f32;
+        frequencies.push(frequency);
+    }
+
+    let mut action_frequency = ACTION_FREQUENCY.lock().unwrap();
+    *action_frequency = frequencies;
+    //打印action_counts和action_frequency
+    // println!("action_counts: {:?}", action_counts);
+    println!("action_frequency: {:?}", action_frequency);
+}
+fn update_opcode_frequency() {
+    let opcodes = vec![
+        "SHA3", "CALL", "CREATE", "SELFDESTRUCT", "JUMP", "JUMPI", "SLOAD", "SSTORE"
+    ];
+    let opcode_counts = OPCODE_COUNTS.lock().unwrap();
+    let total_count: u32 = opcodes.iter()
+        .map(|&opcode| *opcode_counts.get(opcode).unwrap_or(&0) as u32)
+        .sum();
+    let frequencies: Vec<f32> = opcodes.iter()
+        .map(|&opcode| {
+            let count = *opcode_counts.get(opcode).unwrap_or(&0);
+            count as f32 / total_count as f32
+        })
+        .collect();
+
+    let mut opcode_frequency = OPCODE_FREQUENCY.lock().unwrap();
+    *opcode_frequency = frequencies;
+
+    println!("opcode_counts: {:?}", opcode_counts);
+    println!("opcode_frequency: {:?}", opcode_frequency);
 }
 //state的设计和方法================================================================================================================
 pub struct State {
@@ -187,6 +220,8 @@ pub struct State {
 
 
     function: [u8;4],//函数签名
+    action_frequency: [f32;16],//action的频率
+    opcode_frequency: [f32;8],
 }
 
 impl State {
@@ -218,6 +253,8 @@ impl State {
             // nonce: None,
             // get_bytes: [0;32],
             function: [0;4],
+            action_frequency:[0.0;16],
+            opcode_frequency:[0.0;8]
         }
     }
 
@@ -270,14 +307,19 @@ impl State {
         //     break
         // }
         // let get_bytes_f32: Vec<f32> = self.get_bytes.iter().map(|&b| b as f32).collect();
-        let function_f32: Vec<f32> = self.function.iter().map(|&b| b as f32).collect();
-        let mut input_data = vec![];
-        // input_data.extend(get_bytes_f32);
-        input_data.extend(function_f32);
-        let input_tensor = Tensor::from_slice(&input_data);
-        println!("tensor~~~~~~~~~~~~~~~~~~~~{:?}", input_data);
+      let action_frequency_f32: Vec<f32> = self.action_frequency.iter().cloned().collect();
+    let function_f32: Vec<f32> = self.function.iter().map(|&b| b as f32).collect();
+    let opcode_frequency_f32: Vec<f32> = self.opcode_frequency.iter().cloned().collect();
 
-        input_tensor
+    let mut input_data = Vec::new();
+    input_data.extend(action_frequency_f32);
+    input_data.extend(function_f32);
+    input_data.extend(opcode_frequency_f32);
+
+    let input_tensor = Tensor::from_slice(&input_data);
+    println!("tensor~~~~~~~~~~~~~~~~~~~~{:?}", input_data);
+
+    input_tensor
     }
 
 
@@ -319,6 +361,8 @@ impl FuzzEnv {
             // chain_id: global_input.env.tx.chain_id,
             // nonce: global_input.env.tx.nonce,
             function:global_abi.function,
+            action_frequency:[0.0;16],
+            opcode_frequency:[0.0;8]
             // get_bytes: match <[u8; 32]>::try_from(global_abi.b.get_bytes()) {
             //     Ok(bytes) => bytes,
             //     Err(_) => [0u8; 32], // provide a default value or handle the error appropriately
@@ -358,6 +402,8 @@ impl FuzzEnv {
             // chain_id: global_input.env.tx.chain_id,
             // nonce: global_input.env.tx.nonce,
             function:global_abi.function,
+            action_frequency: <[f32; 16]>::try_from(ACTION_FREQUENCY.lock().unwrap().clone()).unwrap(),
+            opcode_frequency: <[f32; 8]>::try_from(OPCODE_FREQUENCY.lock().unwrap().clone()).unwrap()
             // get_bytes: match <[u8; 32]>::try_from(global_abi.b.get_bytes()) {
             //     Ok(bytes) => bytes,
             //     Err(_) => [0u8; 32], // provide a default value or handle the error appropriately
@@ -878,10 +924,9 @@ impl DQNAgent {
             action_index = q_value.argmax(-1, false).int64_value(&[]) as usize % self.actions.len();
             action = self.actions[action_index];
         }
-        // Update the global action counts
-        let mut action_counts = ACTION_COUNTS.lock().unwrap();
-        let count = action_counts.entry(action).or_insert(0);
-        *count += 1;
+        // Update action counts
+        update_action_frequency(action);
+        update_opcode_frequency();
 
         (action, action_index as i64)
     }

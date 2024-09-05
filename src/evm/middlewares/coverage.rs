@@ -12,7 +12,7 @@ use std::{
 use itertools::Itertools;
 use libafl::schedulers::Scheduler;
 use revm_interpreter::{
-    opcode::{INVALID, JUMPDEST, JUMPI, STOP},
+    opcode::{CALL, CREATE, INVALID, JUMP, JUMPDEST, JUMPI, SELFDESTRUCT, SHA3, SLOAD, SSTORE, STOP},
     Interpreter,
 };
 use revm_primitives::Bytecode;
@@ -20,7 +20,7 @@ use serde::Serialize;
 use serde_json;
 use tracing::info;
 
-use crate::evm::{BRANCH_COVERAGE, BRANCH_COVERAGE_LIST, bytecode_iterator::all_bytecode, host::FuzzHost, INSTRUCTION_COVERAGE, INSTRUCTION_COVERAGE_LIST, middlewares::middleware::{Middleware, MiddlewareType}, srcmap::{RawSourceMapInfo, SourceCodeResult, SOURCE_MAP_PROVIDER}, types::{is_zero, EVMAddress, EVMFuzzState}, vm::IN_DEPLOY};
+use crate::evm::{bytecode_iterator::all_bytecode, host::FuzzHost, middlewares::middleware::{Middleware, MiddlewareType}, srcmap::{RawSourceMapInfo, SourceCodeResult, SOURCE_MAP_PROVIDER}, types::{is_zero, EVMAddress, EVMFuzzState}, vm::IN_DEPLOY, BRANCH_COVERAGE, BRANCH_COVERAGE_LIST, INSTRUCTION_COVERAGE, INSTRUCTION_COVERAGE_LIST, OPCODE_COUNTS};
 
 pub static mut EVAL_COVERAGE: bool = false;
 
@@ -31,6 +31,53 @@ pub fn instructions_pc(bytecode: &Bytecode) -> (HashSet<usize>, HashSet<usize>, 
     let mut skip_instructions = HashSet::new();
     let mut total_jumpi_set = HashSet::new();
     all_bytecode(&bytecode.bytes().to_vec()).iter().for_each(|(pc, op)| {
+        //匹配*op的值 ，如果是[SHA3, CALL, CREATE, SELFDESTRUCT, JUMP, JUMPI, SLOAD,SSTORE)]中的值
+        // 则增加全局变量OPCODE_COUNTS中对应的值
+
+        match *op {
+            SHA3 => {
+                let mut opcode_counts = OPCODE_COUNTS.lock().unwrap();
+                let count = opcode_counts.entry("SHA3".to_string()).or_insert(0);
+                *count += 1;
+                println!("///{:?}", opcode_counts)
+            }
+            CALL => {
+                let mut opcode_counts = OPCODE_COUNTS.lock().unwrap();
+                let count = opcode_counts.entry("CALL".to_string()).or_insert(0);
+                *count += 1;
+            }
+            CREATE => {
+                let mut opcode_counts = OPCODE_COUNTS.lock().unwrap();
+                let count = opcode_counts.entry("CREATE".to_string()).or_insert(0);
+                *count += 1;
+            }
+            SELFDESTRUCT => {
+                let mut opcode_counts = OPCODE_COUNTS.lock().unwrap();
+                let count = opcode_counts.entry("SELFDESTRUCT".to_string()).or_insert(0);
+                *count += 1;
+            }
+            JUMP => {
+                let mut opcode_counts = OPCODE_COUNTS.lock().unwrap();
+                let count = opcode_counts.entry("JUMP".to_string()).or_insert(0);
+                *count += 1;
+            }
+            JUMPI => {
+                let mut opcode_counts = OPCODE_COUNTS.lock().unwrap();
+                let count = opcode_counts.entry("JUMPI".to_string()).or_insert(0);
+                *count += 1;
+            }
+            SLOAD => {
+                let mut opcode_counts = OPCODE_COUNTS.lock().unwrap();
+                let count = opcode_counts.entry("SLOAD".to_string()).or_insert(0);
+                *count += 1;
+            }
+            SSTORE => {
+                let mut opcode_counts = OPCODE_COUNTS.lock().unwrap();
+                let count = opcode_counts.entry("SSTORE".to_string()).or_insert(0);
+                *count += 1;
+            }
+            _ => {}
+        }
         if *op == JUMPDEST || *op == STOP || *op == INVALID {
             skip_instructions.insert(*pc);
         }

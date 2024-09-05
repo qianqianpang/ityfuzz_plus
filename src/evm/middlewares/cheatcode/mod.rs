@@ -1,4 +1,5 @@
 use crate::global_info::IS_INSTRUCTION_INTERESTING;
+use std::sync::atomic::Ordering;
 use std::{
     clone::Clone,
     cmp::min,
@@ -7,7 +8,6 @@ use std::{
     marker::PhantomData,
     ops::{BitAnd, Not},
 };
-use std::sync::atomic::Ordering;
 
 use alloy_primitives::{Address, Bytes as AlloyBytes, Log as RawLog, B256};
 use alloy_sol_types::SolInterface;
@@ -599,7 +599,7 @@ fn try_memory_resize(interp: &mut Interpreter, offset: usize, len: usize) -> Res
 
 fn get_opcode_type(op: u8, interp: &Interpreter) -> OpcodeType {
     match op {
-        opcode::CALL | opcode::CALLCODE | opcode::DELEGATECALL | opcode::STATICCALL => {
+        opcode::CALL | opcode::CALLCODE  | opcode::STATICCALL => {
             let target: B160 = B160(
                 interp.stack().peek(1).unwrap().to_be_bytes::<{ U256::BYTES }>()[12..]
                     .try_into()
