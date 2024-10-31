@@ -1,5 +1,6 @@
-use crate::power_sched::plot_reward_values;
 use crate::global_info::{calculate_value, print_p_table};
+use crate::power_sched::plot_reward_values;
+use std::sync::atomic::Ordering;
 use std::{
     collections::{hash_map::DefaultHasher, HashMap},
     env,
@@ -12,7 +13,6 @@ use std::{
     process::exit,
     time::Duration,
 };
-use std::sync::atomic::Ordering;
 
 use itertools::Itertools;
 use libafl::{
@@ -44,6 +44,9 @@ use libafl_bolts::current_time;
 use serde::{de::DeserializeOwned, Serialize};
 use tracing::info;
 
+use crate::evm::{BRANCH_COVERAGE, INSTRUCTION_COVERAGE, MUTATE_COUNT, MUTATE_COUNTS_VEC, SOLUTION_FLAG};
+use crate::feedback::{FeedbackExt1, FeedbackExt2};
+use crate::global_info::{IS_CMP_INTERESTING, IS_DATAFLOW_INTERESTING, IS_OBJECTIVE};
 use crate::{
     evm::{host::JMP_MAP, solution, utils::prettify_concise_inputs},
     feedback::CmpMetadata,
@@ -55,9 +58,6 @@ use crate::{
     scheduler::HasReportCorpus,
     state::{HasCurrentInputIdx, HasExecutionResult, HasInfantStateState, HasItyState, InfantStateState},
 };
-use crate::evm::{BRANCH_COVERAGE, MUTATE_COUNTS_VEC, INSTRUCTION_COVERAGE, MUTATE_COUNT, SOLUTION_FLAG};
-use crate::feedback::{FeedbackExt1, FeedbackExt2};
-use crate::global_info::{IS_CMP_INTERESTING, IS_DATAFLOW_INTERESTING, IS_OBJECTIVE};
 
 pub static mut RUN_FOREVER: bool = false;
 pub static mut ORACLE_OUTPUT: Vec<serde_json::Value> = vec![];
@@ -278,7 +278,7 @@ where
         state: &mut EM::State,
         manager: &mut EM,
     ) -> std::result::Result<(), libafl::Error> {
-        println!("=======================开始fuzzloop==========================");
+        // println!("=======================开始fuzzloop==========================");
         // now report stats to manager every 1 sec
         let reporting_interval = Duration::from_millis(
             env::var("REPORTING_INTERVAL")
@@ -612,7 +612,7 @@ where
                      }).join("\n") },
                     txn_text
                 );
-                println!("{}", cur_report);
+                // println!("{}", cur_report);
 
                 solution::generate_test(cur_report.clone(), minimized);
 

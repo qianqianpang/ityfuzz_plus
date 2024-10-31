@@ -931,8 +931,7 @@ pub fn evm_main(mut args: EvmArgs) {
 
         // fuzz轮数++
         FUZZ_COUNT.fetch_add(1, Ordering::SeqCst);
-        println!("👉👉👉👉👉👉👉👉👉又执行了一次......");
-        plot_mutate_counts_vec().expect("plot error");
+        // plot_mutate_counts_vec().expect("plot error");
     // }
 
 

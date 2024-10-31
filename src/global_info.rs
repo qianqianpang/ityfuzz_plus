@@ -1,9 +1,9 @@
-use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
-use std::collections::HashMap;
-use std::sync::Mutex;
+use crate::evm::{BRANCH_COVERAGE, BRANCH_COVERAGE_LIST, INSTRUCTION_COVERAGE, INSTRUCTION_COVERAGE_LIST, MUTATE_COUNT};
 use lazy_static::lazy_static;
 use rand::Rng;
-use crate::evm::{BRANCH_COVERAGE, BRANCH_COVERAGE_LIST, INSTRUCTION_COVERAGE, INSTRUCTION_COVERAGE_LIST, MUTATE_COUNT};
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
+use std::sync::Mutex;
 
 pub static IS_OBJECTIVE: AtomicBool = AtomicBool::new(false);
 pub static IS_CMP_INTERESTING: AtomicBool = AtomicBool::new(false);
@@ -219,12 +219,12 @@ pub fn adjust_p_table() {
     }
 }
 pub fn print_p_table() {
-    println!("================P_TABLE======");
+    // println!("================P_TABLE======");
     let p_table = P_TABLE.lock().unwrap();
     for (key, value_map) in p_table.iter() {
-        println!("{}:", key);
+        // println!("{}:", key);
         for (sub_key, sub_value) in value_map.iter() {
-            println!("     {}: {}", sub_key, sub_value);
+            // println!("     {}: {}", sub_key, sub_value);
         }
     }
 }
@@ -254,12 +254,12 @@ pub fn increment_mutation_op(key: &'static str, sub_key: &'static str) {
     }
 }
 pub fn print_mutation_op() {
-    println!("================MUTATION_OP======");
+    // println!("================MUTATION_OP======");
     let mutation_op = MUTATION_OP.lock().unwrap();
     for (key, value_map) in mutation_op.iter() {
-        println!("{}:", key);
+        // println!("{}:", key);
         for (sub_key, sub_value) in value_map.iter() {
-            println!("     {}: {}", sub_key, sub_value);
+            // println!("     {}: {}", sub_key, sub_value);
         }
     }
 }

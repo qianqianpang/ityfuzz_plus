@@ -147,7 +147,7 @@ where
         corpus_idx: CorpusId,
     ) -> Result<(), Error> {
         MUTATE_COUNT.fetch_add(1, Ordering::SeqCst);
-        println!(">>>>>>执行mutate stage perform");
+        // println!(">>>>>>执行mutate stage perform");
 
         //dqn_1
         let mut env = crate::evm::ENV.lock().unwrap();
@@ -168,9 +168,9 @@ where
         if MUTATE_COUNT.load(Ordering::SeqCst) % 2 == 0 {
             if agent.replay_buffer.len() >= batch_size as usize {
                 agent.update_model(batch_size as usize).expect("update_model panic");
-                println!(">>update model");
+                // println!(">>update model");
             } else {
-                println!("Not enough samples in replay buffer to update model");
+                // println!("Not enough samples in replay buffer to update model");
             }
         }
         ret

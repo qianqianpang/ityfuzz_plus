@@ -80,7 +80,7 @@ pub fn set_mutator_selection() -> HashMap<&'static str, u8> {
     let global_mutation = *GLOBAL_MUTATION.lock().unwrap();
     let global_mutation_string = global_mutation.to_string();
     let mutations: Vec<_> = global_mutation_string.chars().map(|c| c.to_digit(10).unwrap() as u8).collect();
-    println!("global_mutation: {}", global_mutation);
+    // println!("global_mutation: {}", global_mutation);
     let keys = vec![
         "0_mutate_mode",
         "1_mutate_method",
@@ -146,7 +146,7 @@ fn update_action_frequency(action:i32) {
     *action_frequency = frequencies;
     //打印action_counts和action_frequency
     // println!("action_counts: {:?}", action_counts);
-    println!("action_frequency: {:?}", action_frequency);
+    // println!("action_frequency: {:?}", action_frequency);
 }
 fn update_opcode_frequency() {
     let opcodes = vec![
@@ -166,8 +166,8 @@ fn update_opcode_frequency() {
     let mut opcode_frequency = OPCODE_FREQUENCY.lock().unwrap();
     *opcode_frequency = frequencies;
 
-    println!("opcode_counts: {:?}", opcode_counts);
-    println!("opcode_frequency: {:?}", opcode_frequency);
+    // println!("opcode_counts: {:?}", opcode_counts);
+    // println!("opcode_frequency: {:?}", opcode_frequency);
 }
 //state的设计和方法================================================================================================================
 pub struct State {
@@ -317,7 +317,7 @@ impl State {
     input_data.extend(opcode_frequency_f32);
 
     let input_tensor = Tensor::from_slice(&input_data);
-    println!("tensor~~~~~~~~~~~~~~~~~~~~{:?}", input_data);
+    // println!("tensor~~~~~~~~~~~~~~~~~~~~{:?}", input_data);
 
     input_tensor
     }

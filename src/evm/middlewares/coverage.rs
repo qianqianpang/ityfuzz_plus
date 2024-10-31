@@ -39,7 +39,7 @@ pub fn instructions_pc(bytecode: &Bytecode) -> (HashSet<usize>, HashSet<usize>, 
                 let mut opcode_counts = OPCODE_COUNTS.lock().unwrap();
                 let count = opcode_counts.entry("SHA3".to_string()).or_insert(0);
                 *count += 1;
-                println!("///{:?}", opcode_counts)
+                // println!("///{:?}", opcode_counts)
             }
             CALL => {
                 let mut opcode_counts = OPCODE_COUNTS.lock().unwrap();
