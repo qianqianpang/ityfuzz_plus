@@ -9,6 +9,7 @@ use std::vec::Vec;
 use bytes::Bytes;
 use csv::Reader;
 use lazy_static::lazy_static;
+use rand::prelude::IteratorRandom;
 use rand::Rng;
 use revm_primitives::{Env, U256};
 use tch::nn::VarStore;
@@ -413,85 +414,33 @@ impl FuzzEnv {
     }
 }
 //ReplayBuffer存储经验元组（state, action, reward, next_state）========================================================
-// pub struct ReplayBuffer {
-//     buffer: VecDeque<(Tensor, i64, i64, Tensor)>,
-//     capacity: usize,
-// }
-//
-// impl ReplayBuffer {
-//     pub fn new(capacity: usize) -> ReplayBuffer {
-//         ReplayBuffer {
-//             buffer: VecDeque::with_capacity(capacity),
-//             capacity,
-//         }
-//     }
-//
-//     pub fn push(&mut self, state: Tensor, action: i64, reward: i64, next_state: Tensor) {
-//         if self.buffer.len() == self.capacity {
-//             self.buffer.pop_front();
-//         }
-//         self.buffer.push_back((state, action, reward, next_state));
-//     }
-//
-//     pub fn sample(&self, batch_size: usize) -> Option<Vec<(Tensor, i64, i64, Tensor)>> {
-//         if self.buffer.len() < batch_size {
-//             None
-//         } else {
-//             Some(self.buffer.iter().map(|(s, a, r, ns)| (s.copy(), *a, *r, ns.copy())).take(batch_size).collect())
-//         }
-//     }
-//
-//     pub fn len(&self) -> usize {
-//         self.buffer.len()
-//     }
-// }
-
 pub struct ReplayBuffer {
     buffer: VecDeque<(Tensor, i64, i64, Tensor)>,
-    priorities: VecDeque<f64>,
     capacity: usize,
-    alpha: f64,//priorities=误差的 alpha 次幂,控制优先级的程度
-    // max_priority: f64,//是否需要
 }
 
 impl ReplayBuffer {
-    pub fn new(capacity: usize, alpha: f64) -> ReplayBuffer {
+    pub fn new(capacity: usize) -> ReplayBuffer {
         ReplayBuffer {
             buffer: VecDeque::with_capacity(capacity),
-            priorities: VecDeque::with_capacity(capacity),
             capacity,
-            alpha,
         }
     }
 
     pub fn push(&mut self, state: Tensor, action: i64, reward: i64, next_state: Tensor) {
         if self.buffer.len() == self.capacity {
             self.buffer.pop_front();
-            self.priorities.pop_front();
         }
         self.buffer.push_back((state, action, reward, next_state));
-        self.priorities.push_back(1 as f64);
     }
 
     pub fn sample(&self, batch_size: usize) -> Option<Vec<(Tensor, i64, i64, Tensor)>> {
         if self.buffer.len() < batch_size {
             None
         } else {
+            // Some(self.buffer.iter().map(|(s, a, r, ns)| (s.copy(), *a, *r, ns.copy())).take(batch_size).collect())
             let mut rng = rand::thread_rng();
-            let total_priority: f64 = self.priorities.iter().sum();
-            let mut sampled_indices = Vec::with_capacity(batch_size);
-
-            for _ in 0..batch_size {
-                let mut rand_val: f64 = rng.gen::<f64>() * total_priority;
-                for (i, &priority) in self.priorities.iter().enumerate() {
-                    rand_val -= priority;
-                    if rand_val <= 0.0 {
-                        sampled_indices.push(i);
-                        break;
-                    }
-                }
-            }
-
+            let sampled_indices: Vec<usize> = (0..self.buffer.len()).choose_multiple(&mut rng, batch_size);
             Some(sampled_indices.iter().map(|&i| {
                 let (ref s, a, r, ref ns) = self.buffer[i];
                 (s.copy(), a, r, ns.copy())
@@ -499,15 +448,11 @@ impl ReplayBuffer {
         }
     }
 
-    pub fn update_priorities(&mut self, indices: &[usize], td_errors: &[f64]) {
-        for (&index, &td_error) in indices.iter().zip(td_errors.iter()) {
-            self.priorities[index] = td_error.abs().powf(self.alpha);
-        }
-    }
     pub fn len(&self) -> usize {
         self.buffer.len()
     }
 }
+
 //DQN Net===============================================================================================================
 #[derive(Debug)]
 pub struct NoisyLinear {
@@ -847,7 +792,7 @@ impl DQNAgent {
         let model = DqnNet::new(vs.clone(), state_dim, action_dim);
         let optimizer_vs = vs.clone();
         let optimizer = nn::Adam::default().build(&mut optimizer_vs.lock().unwrap(), 1e-7).unwrap();
-        let replay_buffer = ReplayBuffer::new(replay_buffer_capacity, alpha);
+        let replay_buffer = ReplayBuffer::new(replay_buffer_capacity);
         let actions = encode_actions();
         let discount_factor = 0.5;
 
@@ -900,10 +845,6 @@ impl DQNAgent {
     self.optimizer.zero_grad();
     loss.backward();
     self.optimizer.step();
-
-    let td_errors: Vec<f64> = (curr_q_value - expected_q_value).abs().iter::<f64>().unwrap().collect();
-    let indices: Vec<usize> = (0..batch_size).collect();
-    self.replay_buffer.update_priorities(&indices, &td_errors);
 
     Ok(())
 }
