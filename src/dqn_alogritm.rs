@@ -561,8 +561,8 @@ impl nn::Module for NoisyLinear {
 
 #[derive(Debug)]
 pub struct DqnNet {
-    // fc1: nn::Linear,
-    fc1: NoisyLinear,
+    fc1: nn::Linear,
+    // fc1: NoisyLinear,
     fc2: nn::Linear,
     // fc2: NoisyLinear,
     fc3: nn::Linear,
@@ -602,12 +602,12 @@ impl DqnNet {
     pub fn new(vs: Arc<Mutex<nn::VarStore>>, input_dim: i64, output_dim: i32) -> DqnNet {
         let vs_clone = Arc::clone(&vs);
         let mut vs = vs.lock().unwrap();
-        // let mut fc1 = nn::linear(vs.root() / "fc1", input_dim, 256, Default::default());
-        let fc1 = NoisyLinear::new(&(vs.root() / "fc1"), input_dim, 256);
+        let fc1 = nn::linear(vs.root() / "fc1", input_dim, 256, Default::default());
+        // let fc1 = NoisyLinear::new(&(vs.root() / "fc1"), input_dim, 256);
         let mut fc2 = nn::linear(vs.root() / "fc2", 256, 128, Default::default());
         // let fc2 = NoisyLinear::new(&(vs.root() / "fc2"), 256, 128);
         let mut fc3 = nn::linear(vs.root() / "fc3", 128, 64, Default::default());
-        let mut fc4 = nn::linear(vs.root() / "fc5", 64, output_dim as i64, Default::default());
+        let mut fc4 = nn::linear(vs.root() / "fc4", 64, output_dim as i64, Default::default());
 
         // Kaiming均匀初始化————默认使用这个初始化
         // kaiming_uniform_init(&mut fc1.ws, input_dim);
